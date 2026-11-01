@@ -1,0 +1,34 @@
+# ACRA Pattern 1 — behavioral-baseline admission (reference).
+#
+# Kyverno enforces the APPROVED SET at admission (CEL ValidatingPolicy, API group
+# policies.kyverno.io). Legacy ClusterPolicy was removed in Kyverno 1.20 — do not
+# use it. Kyverno enforces membership in the approved set; the ACRA gate computes
+# drift and independence. Kyverno does NOT measure drift.
+#
+# This gates agent bundle Pods: a Pod may run only if its tuple annotation names
+# a tuple the AgentPolicy approved. Combinative drift (a tuple nobody approved)
+# never gets admitted.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: acra-approved-tuple
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  # Only Pods labelled as ACRA agents are subject to this policy.
+  matchConditions:
+    - name: is-acra-agent
+      expression: "has(object.metadata.labels) && 'acra.dev/agent' in object.metadata.labels"
+  validations:
+    - expression: >-
+        has(object.metadata.annotations) &&
+        'acra.dev/approved-tuple' in object.metadata.annotations &&
+        object.metadata.annotations['acra.dev/approved-tuple'] != ''
+      message: >-
+        Pod has no approved-tuple attestation. The (prompt,manifest,ruleset,formula)
+        combination was never approved — effects refused (combinative drift).

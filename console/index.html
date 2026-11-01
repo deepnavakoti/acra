@@ -1,0 +1,442 @@
+<meta charset="utf-8">
+<title>ACRA Console</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: fixed left rail of screens, scrolling content; summary strip before detail on every screen. */
+:root{
+  --bg:#F3F5F7; --panel:#FFFFFF; --ink:#16212B; --muted:#5C6B78; --line:#D8DEE4; --soft:#EAEEF2;
+  --accent:#0F6E75; --accent-ink:#FFFFFF; --good:#1F7A4D; --warn:#B7791F; --crit:#B3261E;
+  --good-bg:#E3F3EA; --warn-bg:#FBF0DC; --crit-bg:#F9E3E1; --accent-bg:#DDEFF0;
+  --sans:'IBM Plex Sans',system-ui,Segoe UI,Arial,sans-serif; --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F151B; --panel:#161E26; --ink:#E6ECF1; --muted:#97A5B1; --line:#2A3540; --soft:#1E2831;
+    --accent:#4FB3BA; --accent-ink:#06282A; --good:#5DCB8E; --warn:#E3B04B; --crit:#F08A80;
+    --good-bg:#153324; --warn-bg:#3A2D12; --crit-bg:#3E1C19; --accent-bg:#163538; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F151B; --panel:#161E26; --ink:#E6ECF1; --muted:#97A5B1; --line:#2A3540; --soft:#1E2831;
+  --accent:#4FB3BA; --accent-ink:#06282A; --good:#5DCB8E; --warn:#E3B04B; --crit:#F08A80;
+  --good-bg:#153324; --warn-bg:#3A2D12; --crit-bg:#3E1C19; --accent-bg:#163538; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100%}
+.rail{background:var(--panel);border-right:1px solid var(--line);padding-block:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:12px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:6px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px}
+.brand .dot{width:12px;height:12px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-bg)}
+.brand b{font-weight:600;letter-spacing:.2px}
+.brand small{display:block;color:var(--muted);font-size:11px}
+.nav button{all:unset;display:flex;justify-content:space-between;align-items:center;width:100%;padding:9px 10px;border-radius:8px;cursor:pointer;color:var(--ink)}
+.nav button:hover{background:var(--soft)}
+.nav button[aria-current="page"]{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nav .n{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--soft);padding:1px 6px;border-radius:10px}
+.nav button[aria-current="page"] .n{background:var(--panel)}
+.railfoot{margin-top:auto;font-size:11px;color:var(--muted);padding:8px}
+.railfoot code{font-family:var(--mono);font-size:11px}
+.main{padding-block:20px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px));min-width:0}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.top h1{font-size:20px;font-weight:600;margin:0;text-wrap:balance}
+.top .sub{color:var(--muted);font-size:13px}
+.stamp{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g21{grid-template-columns:2fr 1fr}
+@media (max-width:900px){.g4,.g3,.g2,.g21{grid-template-columns:1fr}.app{grid-template-columns:1fr}.rail{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.railfoot{display:none}.brand{width:100%}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.card h2{font-size:13px;font-weight:600;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.kpi{display:flex;flex-direction:column;gap:4px}
+.kpi .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi .l{color:var(--muted);font-size:12px}
+.kpi .d{font-size:12px;font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.ok{background:var(--good-bg);color:var(--good)} .warn{background:var(--warn-bg);color:var(--warn)} .crit{background:var(--crit-bg);color:var(--crit)} .info{background:var(--accent-bg);color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;padding:8px 8px;border-bottom:1px solid var(--line)}
+td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tr.row{cursor:pointer}
+tr.row:hover td{background:var(--soft)}
+.mono{font-family:var(--mono);font-size:12px}
+.muted{color:var(--muted)}
+.tw{overflow-x:auto}
+.bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden;min-width:80px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar.w i{background:var(--warn)} .bar.c i{background:var(--crit)}
+.stripe{border-left:4px solid var(--line)}
+.stripe.crit{border-left-color:var(--crit)} .stripe.warn{border-left-color:var(--warn)} .stripe.ok{border-left-color:var(--good)}
+.btn{all:unset;cursor:pointer;padding:7px 12px;border-radius:8px;border:1px solid var(--line);font-weight:600;font-size:13px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+@media (max-width:900px){.steps{grid-template-columns:1fr}}
+.step{border:1px solid var(--line);border-radius:8px;padding:10px;position:relative}
+.step .t{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
+.step .s{font-weight:600;margin:2px 0}
+.step.done{border-color:var(--good);background:var(--good-bg)}
+.step.now{border-color:var(--accent);background:var(--accent-bg)}
+.hyp{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}
+.hyp:last-child{border-bottom:0}
+.hyp .c{font-family:var(--mono);font-size:12px;min-width:44px;color:var(--accent);font-weight:600}
+.chain{font-family:var(--mono);font-size:12px}
+.chain .e{display:grid;grid-template-columns:70px 120px 1fr;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line)}
+.chain .e:last-child{border-bottom:0}
+.chain .k{color:var(--muted)}
+.kern{color:var(--warn)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+svg text{font-family:var(--sans)}
+.sig{background:var(--soft);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px;word-break:break-all}
+.field{display:grid;grid-template-columns:160px 1fr;gap:6px 12px;font-size:13px}
+.field dt{color:var(--muted)} .field dd{margin:0}
+input[type=search]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-family:var(--mono);font-size:13px}
+.diffrow{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:center}
+.diffrow:last-child{border-bottom:0}
+@media (prefers-reduced-motion:no-preference){.pulse{animation:pulse 2s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}}
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><span class="dot pulse"></span><div><b>ACRA</b><small>control plane · eks-east-1 · controller synced</small></div></div>
+    <nav class="nav" id="nav" aria-label="Screens"></nav>
+    <div class="railfoot">Polling control plane <code>acra.acra-system.svc/v1</code><br>Controller findings: 212 objects, 3 agents<br>Last poll <span id="lastpoll">—</span> · sample data</div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+<script>
+/* ---------- data: the shape the console expects from ACRA's /v1 API. In production, fetchFromACRA() replaces the samples. ---------- */
+const DATA = {
+  asOf: "2026-10-18T13:40:00Z",
+  overview: {
+    layers: ["Execution","Context","Authority","Evidence","Effect","Compatibility"],
+    driftIndex30d: {
+      Execution:    [0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,2],
+      Context:      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3],
+      Authority:    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0],
+      Evidence:     [0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,4,4],
+      Effect:       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2],
+      Compatibility:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0]
+    },
+    lastCleanNight: {"document-agent":"2026-10-18","decision-agent":"2026-10-16","verification-agent":"2026-10-18","analysis-agent":"2026-10-18"},
+    baselineAge: {Execution:3,Context:1,Authority:5,Evidence:9,Effect:2,Compatibility:1}
+  },
+  tickets: [
+    {id:"ACRA-3113", layer:"Authority", sev:"crit", title:"evaluation-agent-c3 in agents-eval opened a connection to the provider endpoint outside Kong; namespace lacked the generated egress policy; kong-dp-3 on stale config generation; call denied by VPC endpoint policy", opened:"2026-10-19T16:40:02Z", state:"closed",
+     detector:"acra.egress_bypass", magnitude:"1 connect() outside Kong; 1 namespace without egress policy; 1 stale gateway replica", confidence:1.0, radius:"0 model calls completed outside Kong; 1 Pod quarantined", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.93, "t": "Namespace created by hand without the acra.io/agents label; client library fell back to the SDK when the route 404ed on a stale data plane."}],
+     action:{"name": "quarantine_and_generate", "params": {"pod": "evaluation-agent-c3", "ns": "agents-eval", "drain": "kong-dp-3"}, "radius": "one Pod, one namespace, one replica", "band": "pre-approved"},
+     history:[["16:40:02", "detect", "eBPF connect() to vpce from agent Pod; policy none"], ["16:40:02", "hold", "Pod quarantined (label acra.io/quarantine); its task parked"], ["16:41:00", "investigate", "ns lacks label; kong-dp-3 stale; SDK fallback in client 2.3.1"], ["16:44:00", "remediate", "label applied → policy generated; dp-3 drained; client 2.3.2 removes fallback"], ["17:10:00", "verify", "0 non-kong connects in 24 h for agents-eval; closed"]],
+     evidence:"t-3113"},
+    {id:"ACRA-3101", layer:"Effect", sev:"crit", title:"verification call for task t-9a40 timed out at Kong (30 s) and the Pod was terminated; provider completed; redelivery held, provider state unknown", opened:"2026-10-19T09:02:31Z", state:"authorise",
+     detector:"acra.c1_c1", magnitude:"1 consequential op, state UNKNOWN", confidence:0.98, radius:"task t-9a40 held before retry; 0 duplicate effects", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.9, "t": "Provider completed at 30.8 s; Kong timeout 30 s; Pod scaled in during the wait; redelivery under attempt 2 would re-issue intent i-7c3."}, {"c": 0.06, "t": "Provider never received the request (connection reset before accept)."}],
+     action:{"name": "reconcile_intent", "params": {"task": "t-9a40", "intent": "i-7c3", "provider": "verification"}, "radius": "one task; read-only against provider", "band": "pre-approved"},
+     history:[["09:02:31", "detect", "timeout 504 + pod terminated + redelivery for intent i-7c3"], ["09:02:31", "hold", "retry refused: effect.state=UNKNOWN"], ["09:03:10", "investigate", "provider lookup by intent id: completed 09:02:32, result id r-5520"], ["09:03:12", "remediate", "receipt attached; task resumed past step 3 without re-issue"], ["09:05:00", "verify", "one effect on provider side; graph shows receipt; awaiting release signature"]],
+     evidence:"t-3101"},
+    {id:"ACRA-3102", layer:"Evidence", sev:"crit", title:"claim c-9f2 'verification confirmed' has one root source cited three times; one citation is the verification agent's own earlier summary retrieved from memory; independence = 1, required 2", opened:"2026-10-19T09:14:02Z", state:"authorise",
+     detector:"acra.c2_c2", magnitude:"independent sources 1 vs required 2 (cited 3)", confidence:0.99, radius:"task t-8c21 held at the gate; 0 writes; 14 tasks re-scored, 2 more held", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.9, "t": "Summary s-12 was indexed before the OOM; the analysis agent retrieved it as an independent verification; all three hops valid on their own."}, {"c": 0.07, "t": "Document re-uploaded under a new id produced a second root."}],
+     action:{"name": "hold_and_request_root", "params": {"task": "t-8c21", "claim": "c-9f2", "need": "second root source (verification provider)"}, "radius": "one task; no record changed", "band": "auto-hold, human to release"},
+     history:[["09:14:02", "detect", "gate: claim c-9f2 roots={doc-4411}; derived edges 3; independence 1 < 2"], ["09:14:03", "hold", "write status=approved refused; task parked"], ["09:16:40", "investigate", "lineage walk: doc-4411 → e-7 → s-12 (memory, self) → a-3 → c-9f2"], ["09:31:00", "authorise", "awaiting second root; release needs signature"]],
+     evidence:"t-3102"},
+    {id:"ACRA-3103", layer:"Execution", sev:"warn", title:"worker analysis-agent-2 published result for task t-3e44 under epoch 7 after lease moved to epoch 8; peer accepted via A2A; fenced at write, not at receipt", opened:"2026-10-19T14:08:20Z", state:"closed",
+     detector:"acra.c3_c3", magnitude:"1 message, epoch 7 vs current 8", confidence:1.0, radius:"1 downstream claim superseded; 0 writes", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.96, "t": "Lease transfer during rollout; old worker resumed after a 44 s model stall and published under epoch 7."}],
+     action:{"name": "fence_inbox_and_rerun", "params": {"task": "t-3e44", "from_epoch": 8}, "radius": "one task step", "band": "pre-approved"},
+     history:[["14:08:20", "detect", "A2A message epoch 7 accepted after epoch 8 opened"], ["14:08:21", "hold", "claims derived from msg marked superseded; approve refused"], ["14:09:00", "investigate", "worker A stalled 44 s on model call; key still valid"], ["14:09:30", "remediate", "inbox fence enabled; step re-run under epoch 8"], ["14:14:00", "verify", "no epoch-7 artefacts in graph; closed"]],
+     evidence:"t-3103"},
+    {id:"ACRA-3104", layer:"Compatibility", sev:"crit", title:"decision-agent bundle 2026.10.19-2 runs tuple (prompt p-31, manifest 1.8.3, rules e8d3, formula f-7) not in the compatibility registry; effects refused", opened:"2026-10-19T14:02:10Z", state:"closed",
+     detector:"acra.c4_c4", magnitude:"tuple 4b9e… unapproved", confidence:1.0, radius:"9 tasks produced drafts only; 0 effects", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.94, "t": "Prompt registry advanced to p-31 after the golden run for 2026.10.19-1; manifest and formula from earlier approvals; combination untested."}],
+     action:{"name": "rollback_bundle", "params": {"agent": "decision-agent", "to": "2026.10.19-1"}, "radius": "new tasks only", "band": "pre-approved"},
+     history:[["14:02:10", "detect", "tuple 4b9e… not in registry"], ["14:02:10", "hold", "effects refused; drafts allowed"], ["14:05:00", "investigate", "prompt p-31 never run with formula f-7; 3 of 40 golden cases differ"], ["14:06:00", "remediate", "rollback to 2026.10.19-1; tuple 4b9e… queued for nightly"], ["15:10:00", "verify", "golden pass on new tuple 100/100; registered; closed"]],
+     evidence:"t-3104"},
+    {id:"ACRA-3105", layer:"Evidence", sev:"warn", title:"trace for task t-6d18 shows 5 of 7 durable events; sampling 10 % under load dropped the A2A hop; span parentage joined across the gap; held on cannot-prove", opened:"2026-10-19T16:21:05Z", state:"verify",
+     detector:"acra.c5_c5", magnitude:"1 unsupported edge; 2 durable events without spans", confidence:0.93, radius:"task t-6d18 held; 11 traces in the hour re-checked, 2 more unknown", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.85, "t": "Head sampling at 10 % under load dropped the A2A hop; the client propagated a stale parent id so the gap closed visually."}, {"c": 0.1, "t": "Clock skew on one node reordered spans."}],
+     action:{"name": "tail_sample_consequential", "params": {"scope": "consequential", "rate": 1.0}, "radius": "collector config only", "band": "pre-approved"},
+     history:[["16:21:05", "detect", "durable events 7, spans 5, unsupported edge verify→decide"], ["16:21:05", "hold", "verdict unknown; approve refused"], ["16:23:00", "investigate", "sampler at 10 %; A2A client propagated parent from thread local"], ["16:30:00", "remediate", "tail sampling by key scope; A2A context from task contract"], ["16:45:00", "verify", "re-run: 7/7 spans, graph agrees; awaiting 24 h clean"]],
+     evidence:"t-3105"},
+    {id:"ACRA-3106", layer:"Execution", sev:"crit", title:"recovery loop on verification-agent: event-loop lag → CPU throttle → scaler +6 → Kong retries → provider 429 → recovery agent re-dispatch; 14 min oscillation, bounded at cycle 3", opened:"2026-10-19T10:40:00Z", state:"closed",
+     detector:"acra.c6_c6", magnitude:"xcorr 0.81 over 3 cycles; budgets ×4", confidence:0.9, radius:"61 tasks delayed; 0 duplicate effects (intent ids held)", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.88, "t": "Scaler step unbounded; Kong retry and recovery re-dispatch both reacted to the same 429s; the provider’s limit is per account, not per replica."}],
+     action:{"name": "bound_and_rollback", "params": {"scaler_step": 2, "retries": 2, "redispatch": 1, "config": "last_stable"}, "radius": "verification-agent only", "band": "human"},
+     history:[["10:40:00", "detect", "xcorr(scale,429)=0.81, cycle 3; retry and redispatch budgets exceeded"], ["10:40:01", "hold", "new re-dispatches refused; retries capped"], ["10:44:00", "investigate", "six controllers on one timeline; provider limit per account"], ["10:52:00", "authorise", "signed by s.iyer"], ["10:52:30", "remediate", "rollback to last stable config; bounds applied"], ["11:20:00", "verify", "429 rate 0.4 %, queue drained; closed"]],
+     evidence:"t-3106"},
+    {id:"ACRA-3107", layer:"Compatibility", sev:"warn", title:"extraction schema v2 on one cloud renamed 'amount' to 'amount_net_of_adjustments'; normaliser mapped it onto the v1 field; model read a different quantity; held on schema version mismatch in tuple", opened:"2026-10-19T08:12:00Z", state:"closed",
+     detector:"acra.m1_m1", magnitude:"schema v2 under v1 normaliser; 1 field redefined", confidence:0.97, radius:"22 tasks re-extracted; 3 values changed", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.92, "t": "Cloud B extraction moved to v2 on 2026-10-18; the normaliser matches by name; the field is net of deductions in v2."}],
+     action:{"name": "reextract_and_rescore", "params": {"schema_pair": "v1/v2", "normaliser": "1.4.0"}, "radius": "22 tasks", "band": "pre-approved"},
+     history:[["08:12:00", "detect", "schema v2 item under v1-only normaliser; tuple miss"], ["08:12:01", "hold", "effects refused for 22 tasks"], ["08:20:00", "investigate", "field diff: definition changed, not only name"], ["08:41:00", "remediate", "normaliser 1.4.0 with version map; re-extract"], ["09:30:00", "verify", "22 re-scored; 3 changed; closed"]],
+     evidence:"t-3107"},
+    {id:"ACRA-3108", layer:"Context", sev:"crit", title:"task t-2f61 route switched bedrock→foundry on timeout; compressed context 118k→61k; recitation against task contract missing 2 of 9 critical claims; held", opened:"2026-10-19T11:03:40Z", state:"authorise",
+     detector:"acra.m2_m2", magnitude:"critical claims 7 of 9 after switch", confidence:0.96, radius:"task t-2f61 held; 4 switched tasks today, 1 more held", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.9, "t": "Compression under the second model’s window dropped two contract claims; the template put the contract after the working context."}],
+     action:{"name": "reattach_contract_and_recite", "params": {"task": "t-2f61"}, "radius": "one task", "band": "pre-approved; release after recite 9/9"},
+     history:[["11:03:40", "detect", "route switch bedrock→foundry; recite 7/9"], ["11:03:41", "hold", "consequential steps refused"], ["11:05:00", "investigate", "contract placed inside compressible region on foundry template"], ["11:12:00", "remediate", "contract injected as immutable region; re-recite 9/9"], ["11:14:00", "authorise", "release pending signature"]],
+     evidence:"t-3108"},
+    {id:"ACRA-3109", layer:"Context", sev:"crit", title:"requirement r-18 for task t-4a02 handed off as 'satisfied'; source is an AI recommendation from the existing backend; authoritative record still 'submitted'; promotion refused", opened:"2026-10-19T12:22:04Z", state:"closed",
+     detector:"acra.m3_m3", magnitude:"status satisfied without authority or receipt", confidence:1.0, radius:"task t-4a02 reverted to evaluated; 0 effects", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.95, "t": "Handoff summariser collapsed likely_met=0.83 into satisfied; the record moved to submitted in parallel."}],
+     action:{"name": "revert_status_and_type_handoff", "params": {"task": "t-4a02", "to": "evaluated"}, "radius": "one task", "band": "pre-approved"},
+     history:[["12:22:04", "detect", "status satisfied, set_by analysis-agent, no receipt"], ["12:22:04", "hold", "final step refused"], ["12:24:00", "investigate", "recommendation 0.83 → summary 'satisfied'; record at submitted"], ["12:25:00", "remediate", "handoff re-typed; task at evaluated"], ["13:10:00", "verify", "record satisfied by verification-service 13:02; receipt attached; closed"]],
+     evidence:"t-3109"},
+    {id:"ACRA-3110", layer:"Evidence", sev:"warn", title:"verification result reached decision-agent by two paths (direct API, MCP adapter) with different cache ages; treated as corroboration; collapsed to one source", opened:"2026-10-19T13:40:11Z", state:"verify",
+     detector:"acra.m4_m4", magnitude:"2 paths, 1 provider, cache age 0 s vs 41 min", confidence:0.97, radius:"task t-8d04 held; 6 tasks in 24 h had both paths, 1 disagreed", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.88, "t": "MCP adapter answered from a 41-minute cache while the backend called the provider live; same provider id in both receipts; the model wrote 'two independent checks agree'."}],
+     action:{"name": "collapse_and_recheck", "params": {"task": "t-8d04", "keep": "freshest receipt", "require": "provider_id distinct for independence"}, "radius": "one task", "band": "pre-approved"},
+     history:[["13:40:11", "detect", "two evidence rows, same provider_id, same request digest; cache_age 0 s vs 2460 s"], ["13:40:12", "hold", "claim marked single-source; status promotion refused"], ["13:41:30", "investigate", "adapter cache TTL 60 min vs backend none; results differed on the subject's name field"], ["13:42:00", "remediate", "adapter TTL 0 for verification; receipt carries provider_id + fetched_at"], ["13:58:00", "verify", "re-run: one source, fresh; task resumed"]],
+     evidence:"t-3110"},
+    {id:"ACRA-3111", layer:"Evidence", sev:"warn", title:"analysis-agent summary for task t-1c33 rests solely on warehouse view (freshness 26 h) while the record and the verification provider hold newer state; analytical source as sole support refused", opened:"2026-10-19T09:40:12Z", state:"closed",
+     detector:"acra.m5_m5", magnitude:"sole support analytical, 26 h stale", confidence:0.95, radius:"task t-1c33 re-run; 5 tasks that day used the stale view, 1 changed", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.9, "t": "Nightly warehouse load finished 11 h late; the summariser gave no priority to source role."}],
+     action:{"name": "rerun_with_operational_pin", "params": {"task": "t-1c33", "pin": "record_system"}, "radius": "one task", "band": "pre-approved"},
+     history:[["09:40:12", "detect", "claim k-27 supported by analytical only; freshness 26 h"], ["09:40:12", "hold", "approve refused"], ["09:42:00", "investigate", "load late; operational rows disagree on current state"], ["09:43:00", "remediate", "source roles in contract; re-run"], ["09:50:00", "verify", "k-27 supported by record system; closed"]],
+     evidence:"t-3111"},
+    {id:"ACRA-3112", layer:"Effect", sev:"crit", title:"task t-5e09 worker restarted between provider accept and callback; checkpoint predates the accept; recovery enumerated 2 uncertain operations from the graph instead of replaying the checkpoint", opened:"2026-10-19T15:02:15Z", state:"authorise",
+     detector:"acra.m6_m6", magnitude:"2 uncertain operations across 2 clouds", confidence:0.98, radius:"task t-5e09 held; 0 duplicate effects", bundle:"sha256:9f1c…", modelPin:"bedrock · pinned v1",
+     hyps:[{"c": 0.92, "t": "Restart between accept and callback; checkpoint predates the accept; callback delivered to a dead listener."}, {"c": 0.05, "t": "Provider accepted and later rejected; callback never sent."}],
+     action:{"name": "reconcile_uncertain_ops", "params": {"task": "t-5e09", "ops": ["i-91a", "i-91b"]}, "radius": "one task; read-only against providers", "band": "pre-approved; resume needs signature"},
+     history:[["15:02:15", "detect", "restart with 1 IN_FLIGHT consequential op and 1 pending extraction"], ["15:02:15", "hold", "replay from checkpoint refused"], ["15:04:00", "investigate", "provider: i-91a accepted, result r-77; extraction i-91b absent"], ["15:04:30", "remediate", "receipt attached for i-91a; i-91b re-issued"], ["15:06:00", "authorise", "resume past step 6 pending signature"]],
+     evidence:"t-3112"},
+  ],
+  fleet: {
+    tasks:[
+      {id:"4480", type:"decision", worker:"dec-7c9", state:"running", step:"4/7", tokens:[38200,120000], calls:[2,6], lease:"ok", fence:12, reissues:0},
+      {id:"4479", type:"intake", worker:"int-2a1", state:"running", step:"2/4", tokens:[6100,40000], calls:[1,4], lease:"ok", fence:3, reissues:0},
+      {id:"4478", type:"decision", worker:"dec-1f0", state:"waiting", step:"5/7", tokens:[71900,120000], calls:[4,6], lease:"ok", fence:9, reissues:1},
+      {id:"4471", type:"followup", worker:"fol-9d3", state:"paused", step:"3/5", tokens:[22400,60000], calls:[7,6], lease:"released", fence:7, reissues:0},
+      {id:"4470", type:"decision", worker:"dec-7c9", state:"done", step:"7/7", tokens:[54300,120000], calls:[3,6], lease:"released", fence:8, reissues:0},
+      {id:"4469", type:"intake", worker:"int-5b7", state:"failed", step:"3/4", tokens:[9800,40000], calls:[2,4], lease:"expired", fence:4, reissues:2}
+    ],
+    bands:{decision:{calls:"3 ± 1",step:"38 s P95",tokens:"52k P95",reissue:"0.4 %"},intake:{calls:"1 ± 0",step:"12 s P95",tokens:"7k P95",reissue:"0.1 %"},followup:{calls:"2 ± 1",step:"20 s P95",tokens:"18k P95",reissue:"0.2 %"}},
+    reissues24h:[0,0,1,0,0,0,1,0,0,2,0,0,0,1,0,0,3,2,4,5,4,3,2,2]
+  },
+  endpoints:[
+    {route:"decision-route", provider:"Bedrock", pin:"anthropic.claude-…-v1:0 (dated)", lifecycle:"Active", regions:["us-east-1","us-east-2","us-west-2"], served24h:{"us-east-1":61,"us-east-2":30,"us-west-2":9}, ttft:[1.1,1.2,1.1,1.3,1.4,1.3,1.5,1.9,2.6,3.4,3.9,3.1,2.1], band:1.6, r429:[0,0,0,0,0,0,0,1,4,9,14,8,3], invalid:[0,0,0,0,0,0,0,0,1,3,5,2,1], sem:[24,12], quota:"RPM 71 % · TPM 64 %", cost:"$3.42/h", status:"warn"},
+    {route:"document-route", provider:"Bedrock", pin:"amazon.nova-…-v1:0 (dated)", lifecycle:"Active", regions:["us-east-1","us-east-2","us-west-2"], served24h:{"us-east-1":70,"us-east-2":30}, ttft:[0.6,0.6,0.7,0.6,0.6,0.7,0.6,0.7,0.7,0.8,0.7,0.7,0.6], band:0.9, r429:[0,0,0,0,0,0,0,0,0,0,0,0,0], invalid:[0,0,0,0,0,0,0,0,0,0,0,0,0], sem:[32,32], quota:"RPM 38 % · TPM 29 %", cost:"$0.61/h", status:"ok"},
+    {route:"judge-route", provider:"Foundry", pin:"gpt-… (2025-xx, NoAutoUpgrade)", lifecycle:"GA · retires 2027-04", regions:["eastus2"], served24h:{"eastus2":100}, ttft:[0.9,0.9,1.0,0.9,0.9,1.0,0.9,0.9,1.0,0.9,0.9,0.9,0.9], band:1.4, r429:[0,0,0,0,0,0,0,0,0,0,0,0,0], invalid:[0,0,0,0,0,0,0,0,0,0,0,0,0], sem:[8,8], quota:"RPM 12 % · TPM 15 %", cost:"$0.28/h", status:"ok"},
+    {route:"verification-route", provider:"Bedrock", pin:"anthropic.claude-…-haiku (dated)", lifecycle:"Legacy · EOL 2027-03-01", regions:["us-east-1","us-east-2","us-west-2"], served24h:{"us-east-1":55,"us-west-2":45}, ttft:[0.8,0.8,0.9,0.8,0.8,0.9,0.8,0.9,0.9,1.0,0.9,0.9,0.8], band:1.2, r429:[0,0,0,0,0,0,0,0,0,0,0,0,0], invalid:[0,0,0,0,0,0,0,0,0,0,0,0,0], sem:[16,16], quota:"RPM 22 % · TPM 19 %", cost:"$0.37/h", status:"warn"}
+  ],
+  evaluation:{
+    agents:{
+      "decision-agent":{band:[92,2], nightly:[92.1,93.0,91.8,92.4,92.9,91.6,92.2,93.1,92.5,86.4,92.8,92.6,93.2,92.0,92.3,92.7,91.9,92.4,92.8,88.9,89.3], p99:[71,73,70,72,74,69,71,75,72,52,73,72,74,71,72,73,70,72,73,58,60], attribution:[["bundle 2026.10.14-3",-0.2],["model pin v1",0.0],["ruleset e8d3",-3.1],["manifest lookup 1.8.3",-0.3]], judge:"calibrated 98.6 / 100", set:{business:48,user:212,edge:131,refreshed:"2026-10-01"}},
+      "document-agent":{band:[96,1.5], nightly:[96.2,96.4,95.9,96.1,96.8,96.0,96.3,96.5,96.1,96.2,96.4,96.0,96.6,96.3,96.1,96.2,96.5,96.0,96.4,96.3,96.1], p99:[88,89,87,88,90,88,88,89,88,88,89,87,90,88,88,88,89,87,89,88,88], attribution:[["bundle 2026.10.10-2",0.1],["model pin v1",0.0]], judge:"calibrated 99.1 / 100", set:{business:22,user:160,edge:74,refreshed:"2026-10-01"}},
+      "verification-agent":{band:[90,2.5], nightly:[90.4,91.0,89.7,90.2,90.9,90.1,90.6,91.2,90.3,90.5,90.8,90.0,91.1,90.4,90.2,90.7,90.1,90.5,90.9,90.2,90.6], p99:[64,66,63,65,67,64,65,68,64,65,66,63,67,65,64,66,64,65,67,64,65], attribution:[["bundle 2026.10.13-1",0.2]], judge:"calibrated 98.9 / 100", set:{business:31,user:140,edge:92,refreshed:"2026-10-01"}}
+    },
+    preprod:[{bundle:"decision-agent 2026.10.18-1", business:"48/48", user:"98.6 %", edge:"91.2 (band 92±2)", result:"blocked: edge mean below band"},{bundle:"document-agent 2026.10.17-4", business:"22/22", user:"99.4 %", edge:"96.0", result:"passed · awaiting approval"}]
+  },
+  baselines:[
+    {layer:"Cluster", version:"c-0147", signed:"2026-10-15", approvers:"m.chen, r.okafor", fields:[["RuntimeClass on agent Pods","gvisor","gvisor","ok"],["Approved bundle hashes","4","4","ok"],["Mutating webhooks","2","2","ok"],["Egress policy present (agents-*)","yes","yes","ok"],["Pod Identity associations","6","6","ok"]]},
+    {layer:"Kong", version:"k-0092", signed:"2026-10-17", approvers:"r.okafor, s.iyer", fields:[["decision-route pin","dated v1","dated v1","ok"],["decision-route token budget","120000","120000","ok"],["Admission semaphore (decision)","24","12","warn"],["JWKS rediscovery","30 s","30 s","ok"],["Allowed callers","3 SAs","3 SAs","ok"]]},
+    {layer:"Endpoints", version:"e-0061", signed:"2026-10-17", approvers:"s.iyer, m.chen", fields:[["Allowed regions (US geographic)","3","3","ok"],["verification-route lifecycle","Active","Legacy","warn"],["Quota headroom floor","30 %","29 %","warn"],["Canary suite band","0.0–0.1","0.04","ok"]]},
+    {layer:"Agents", version:"a-0210", signed:"2026-10-09", approvers:"m.chen, p.sato", fields:[["decision rule set hash","e8d3…","e8d3…","ok"],["decision calls band","3 ± 1","7 (task 4471)","crit"],["lookup-tools manifest","1.8.3","1.8.3","ok"],["Key re-issue rate","≤ 0.5 %","1.9 %","warn"]]},
+    {layer:"Evaluation", version:"v-0033", signed:"2026-10-17", approvers:"p.sato, s.iyer", fields:[["Golden set hash","3d4c…","3d4c…","ok"],["Judge pin","Foundry gpt-… NoAutoUpgrade","same","ok"],["decision band","92 ± 2","89.3 last night","crit"]]},
+    {layer:"Evidence", version:"x-0018", signed:"2026-10-06", approvers:"r.okafor, p.sato", fields:[["Chain head","9b7e…","9b7e…","ok"],["Object Lock mode","compliance","compliance","ok"],["Spans rejected (24 h)","0","0","ok"]]}
+  ],
+  evidence:{
+    "t-3102":{task:"4478", caller:"decision-agent/dec-1f0", bundle:"sha256:9f1c…", chain:"intact", entries:[
+      ["11:40:02","dispatch","task key minted · exp +40 m · budget 120k / 6 calls · fence 9"],
+      ["11:40:03","kong","POST decision-route · proof ok · reserved 14.2k · model pinned v1"],
+      ["11:40:08","model","200 · 13.9k settled · stop=end_turn"],
+      ["11:40:09","tool","lookup-tools.lookup-record · manifest 1.8.3 ok"],
+      ["11:41:50","kernel","connect() 10.4.2.17:8443 (lookup-tools) · allowed"],
+      ["11:51:40","agent","compaction event · context 118k → 61k"],
+      ["11:51:44","kong","POST decision-route · ruleset injected (e8d3…)"],
+      ["11:51:59","gate","claim c-9f2 roots=1 required=2 · hold"],
+      ["11:52:03","ticket","ACRA-3102 opened · independence 1 of 2 · radius 1 task held"]
+    ]},
+    "t-71aa":{task:"(route)", caller:"kong", bundle:"—", chain:"intact", entries:[["11:29","kong","TTFT P99 2.6 s"],["11:31","kernel","tcp retransmits kong→bedrock 9/min"],["11:31:40","acra","endpoint.ttft_band fired"],["11:32:01","apply","semaphore 24→12 (rule-signed)"]]},
+    "t-3d90":{task:"4471", caller:"verification-agent/fol-9d3", bundle:"sha256:b22e…", chain:"intact", entries:[["10:57:02","tool","lookup-tools.lookup-record · 429 · body text/html"],["10:57:05","kong","call 4 · reserved"],["10:57:40","kong","call 7 refused · budget_exhausted (calls)"],["10:58:15","apply","pause_task 4471"]]},
+    "t-5b17":{task:"(nightly)", caller:"eval-cronjob", bundle:"sha256:9f1c…", chain:"intact", entries:[["01:00","cronjob","sampled 391 cases"],["01:31","judge","calibration 98.4 ok"],["01:48","acra","eval.nightly_band fired · 86.4"]]}
+  },
+  policy:{
+    policies:[["agent-bundle-approved","Enforce","background ok · 0 violations"],["agent-runtimeclass-required","Enforce","0 violations"],["no-latest-tags","Enforce","0 violations"],["verify-agent-images","Enforce","4 digests admitted"],["egress-default-deny","Audit","1 finding: namespace agents-sandbox"]],
+    lastScan:"2026-10-18 13:35 · 212 objects · 1 finding",
+    queue:[["ACRA-3102","hold_and_request_root","validated","release signature pending"],["document-agent 2026.10.17-4","release","pre-prod passed","awaiting 2nd approver"]]
+  }
+};
+
+/* ---------- fetch layer. Replace with real calls; the screens only read these shapes. ---------- */
+async function fetchFromACRA(path){ return DATA; }
+
+/* ---------- helpers ---------- */
+const $ = (s,el=document)=>el.querySelector(s);
+const esc = s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const sevPill = s=>`<span class="pill ${s==='crit'?'crit':s==='warn'?'warn':'ok'}">${s==='crit'?'Critical':s==='warn'?'Warning':'OK'}</span>`;
+const statePill = s=>({detect:"info",hold:"crit",investigate:"info",authorise:"warn",remediate:"warn",verify:"info",closed:"ok"})[s]||"info";
+function spark(vals, w=160, h=36, color="var(--accent)", band){
+  const max=Math.max(...vals, band||0)||1, min=0;
+  const pts=vals.map((v,i)=>[(i/(vals.length-1))*w, h-((v-min)/(max-min))*(h-4)-2]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area=d+` L${w} ${h} L0 ${h} Z`;
+  const last=pts[pts.length-1];
+  const bandLine = band? `<line x1="0" x2="${w}" y1="${(h-((band-min)/(max-min))*(h-4)-2).toFixed(1)}" y2="${(h-((band-min)/(max-min))*(h-4)-2).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3"/>`:'';
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><path d="${area}" fill="${color}" opacity=".12"/>${bandLine}<path d="${d}" fill="none" stroke="${color}" stroke-width="1.5"/><circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="${color}"/></svg>`;
+}
+function lineChart(series, labels, {w=640,h=200,band}={}){
+  const all=series.flatMap(s=>s.v); const max=Math.ceil(Math.max(...all,(band?band[0]+band[1]:0))+1), min=Math.floor(Math.min(...all,(band?band[0]-band[1]:1e9))-1);
+  const px=i=>40+(i/(labels.length-1))*(w-60), py=v=>h-30-((v-min)/(max-min))*(h-50);
+  let g='';
+  for(let k=0;k<=4;k++){const v=min+(max-min)*k/4; g+=`<line x1="40" x2="${w-20}" y1="${py(v)}" y2="${py(v)}" stroke="var(--line)"/><text x="34" y="${py(v)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${v.toFixed(0)}</text>`;}
+  let bandRect=''; if(band){bandRect=`<rect x="40" y="${py(band[0]+band[1])}" width="${w-60}" height="${py(band[0]-band[1])-py(band[0]+band[1])}" fill="var(--good)" opacity=".10"/><line x1="40" x2="${w-20}" y1="${py(band[0])}" y2="${py(band[0])}" stroke="var(--good)" stroke-dasharray="4 3"/>`;}
+  const paths=series.map(s=>{const d=s.v.map((v,i)=>(i?'L':'M')+px(i).toFixed(1)+' '+py(v).toFixed(1)).join(' '); const last=s.v.length-1; return `<path d="${d}" fill="none" stroke="${s.c}" stroke-width="2"/><circle cx="${px(last)}" cy="${py(s.v[last])}" r="3.5" fill="${s.c}"/>`;}).join('');
+  const xl=labels.map((l,i)=> (i%5===0||i===labels.length-1)?`<text x="${px(i)}" y="${h-12}" text-anchor="middle" font-size="10" fill="var(--muted)">${l}</text>`:'').join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="trend">${g}${bandRect}${paths}${xl}</svg>`;
+}
+function stackedBars(idx, layers, w=640, h=150){
+  const colors={Cluster:"#6B7F8E",Kong:"#8E6B8A",Endpoints:"var(--warn)",Agents:"var(--crit)",Evaluation:"var(--accent)",Evidence:"#4A7A6A"};
+  const n=idx[layers[0]].length; const totals=Array.from({length:n},(_,i)=>layers.reduce((a,l)=>a+idx[l][i],0)); const max=Math.max(...totals,1);
+  const bw=(w-50)/n-2; let out='';
+  for(let i=0;i<n;i++){let y=h-24; for(const l of layers){const v=idx[l][i]; if(!v)continue; const hh=(v/max)*(h-40); y-=hh; out+=`<rect x="${40+i*(bw+2)}" y="${y}" width="${bw}" height="${hh}" fill="${colors[l]}" rx="1"><title>${l}: ${v}</title></rect>`;}}
+  const ax=`<line x1="40" x2="${w-10}" y1="${h-24}" y2="${h-24}" stroke="var(--line)"/><text x="40" y="${h-8}" font-size="10" fill="var(--muted)">30 days ago</text><text x="${w-10}" y="${h-8}" text-anchor="end" font-size="10" fill="var(--muted)">today</text><text x="34" y="${h-26}" text-anchor="end" font-size="10" fill="var(--muted)">0</text><text x="34" y="20" text-anchor="end" font-size="10" fill="var(--muted)">${max}</text>`;
+  const legend=layers.map(l=>`<span><i style="background:${colors[l]}"></i>${l}</span>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="drift index by layer, 30 days">${out}${ax}</svg><div class="legend">${legend}</div>`;
+}
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2200);}
+
+/* ---------- screens ---------- */
+const SCREENS=[
+  {id:"overview",name:"Overview"},{id:"tickets",name:"Tickets",count:d=>d.tickets.filter(t=>t.state!=='closed').length},
+  {id:"fleet",name:"Fleet",count:d=>d.fleet.tasks.filter(t=>t.state==='running'||t.state==='waiting').length},
+  {id:"endpoints",name:"Endpoints",count:d=>d.endpoints.filter(e=>e.status!=='ok').length},
+  {id:"evaluation",name:"Evaluation"},{id:"baselines",name:"Baselines"},{id:"evidence",name:"Evidence"},{id:"policy",name:"Policy",count:d=>d.policy.queue.length}
+];
+let state={screen:"overview",ticket:null,agent:"decision-agent",evidence:"t-3102"};
+try{const h=location.hash.replace('#',''); if(SCREENS.some(s=>s.id===h)) state.screen=h;}catch(e){}
+
+function header(title,sub){return `<div class="top"><div><h1>${title}</h1><div class="sub">${sub}</div></div><div class="stamp">as of ${DATA.asOf.replace('T',' ').replace('Z',' UTC')}</div></div>`;}
+
+const R={
+  overview(d){
+    const open=d.tickets.filter(t=>t.state!=='closed'); const crit=open.filter(t=>t.sev==='crit').length;
+    const kpis=`<div class="grid g4">
+      <div class="card kpi"><span class="l">Open tickets</span><span class="v">${open.length}</span><span class="d ${crit?'crit':''}" style="color:${crit?'var(--crit)':'var(--good)'}">${crit} critical · ${open.length-crit} warning</span></div>
+      <div class="card kpi"><span class="l">Tasks in flight</span><span class="v">${d.fleet.tasks.filter(t=>t.state==='running'||t.state==='waiting').length}</span><span class="d muted">4 held at the gate · 0 failed today</span></div>
+      <div class="card kpi"><span class="l">Routes outside band</span><span class="v">${d.endpoints.filter(e=>e.status!=='ok').length}<span class="muted" style="font-size:16px">/${d.endpoints.length}</span></span><span class="d" style="color:var(--warn)">decision-route TTFT · verification-route lifecycle</span></div>
+      <div class="card kpi"><span class="l">Last clean night</span><span class="v" style="font-size:20px">decision: 2 d ago</span><span class="d muted">document, verification, analysis: last night</span></div>
+    </div>`;
+    const chart=`<div class="card"><h2>Drift index by domain · 30 days</h2>${stackedBars(d.overview.driftIndex30d,d.overview.layers)}<div class="note">Index = sum of open-ticket magnitudes weighted by confidence. The last three days are evidence-domain holds: lineage, provenance and freshness.</div></div>`;
+    const fresh=`<div class="card"><h2>Contract freshness</h2><table><tr><th>Domain</th><th>Signed</th><th>Status</th></tr>${d.overview.layers.map(l=>{const a=d.overview.baselineAge[l];return `<tr><td>${l}</td><td class="mono">${a} d ago</td><td>${a>7?'<span class="pill warn">Review</span>':'<span class="pill ok">Fresh</span>'}</td></tr>`;}).join('')}</table></div>`;
+    const list=`<div class="card"><h2>Needs attention</h2><div class="tw"><table>${open.map(t=>`<tr class="row stripe ${t.sev}" data-ticket="${t.id}"><td class="mono">${t.id}</td><td>${sevPill(t.sev)}</td><td>${esc(t.title)}</td><td><span class="pill ${statePill(t.state)}">${t.state}</span></td><td class="mono muted">${t.radius}</td></tr>`).join('')}</table></div></div>`;
+    return header("Production is green on every Pod and every call returned 200. Four tasks are held at the gate.","ACRA · eks-east-1 · 6 agents, 5 adapters, 4 model routes")+kpis+`<div class="grid g21" style="margin-top:14px">${chart}${fresh}</div><div style="margin-top:14px">${list}</div>`;
+  },
+  tickets(d){
+    if(state.ticket){return R.ticket(d,d.tickets.find(t=>t.id===state.ticket));}
+    const rows=d.tickets.map(t=>`<tr class="row stripe ${t.sev}" data-ticket="${t.id}"><td class="mono">${t.id}</td><td>${sevPill(t.sev)}</td><td>${t.layer}</td><td>${esc(t.title)}</td><td><span class="pill ${statePill(t.state)}">${t.state}</span></td><td class="mono">${(t.confidence*100).toFixed(0)} %</td><td class="mono muted">${t.radius}</td><td class="mono muted">${t.opened.slice(5,16).replace('T',' ')}</td></tr>`).join('');
+    return header("Tickets","Every drift is a record that walks detect → hold → investigate → authorise → remediate → verify. Nothing closes without a passing re-run.")+`<div class="card"><div class="tw"><table><tr><th>ID</th><th>Severity</th><th>Domain</th><th>Finding</th><th>Stage</th><th>Confidence</th><th>Blast radius</th><th>Opened</th></tr>${rows}</table></div></div>`;
+  },
+  ticket(d,t){
+    const stages=["detect","hold","investigate","authorise","remediate","verify"]; const idx=t.state==='closed'?6:stages.indexOf(t.state);
+    const steps=stages.map((s,i)=>`<div class="step ${i<idx?'done':i===idx?'now':''}"><div class="t">${i+1}</div><div class="s">${s}</div><div class="muted" style="font-size:12px">${(t.history.find(h=>h[1]===s)||['','','—'])[2]}</div></div>`).join('');
+    const hyps=t.hyps.map(h=>`<div class="hyp"><span class="c">${(h.c*100).toFixed(0)} %</span><span>${esc(h.t)}</span></div>`).join('');
+    const canApprove=t.state==='authorise';
+    return `<div class="top"><div><button class="btn" id="back">← Tickets</button></div><div class="stamp">${t.id}</div></div>
+    <div class="card stripe ${t.sev}" style="margin-bottom:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${sevPill(t.sev)}<span class="pill info">${t.layer}</span><span class="pill ${statePill(t.state)}">${t.state}</span></div><h1 style="font-size:18px;margin:8px 0 0">${esc(t.title)}</h1></div>
+    <div class="steps" style="margin-bottom:14px">${steps}</div>
+    <div class="grid g3">
+      <div class="card kpi"><span class="l">Magnitude</span><span class="v" style="font-size:18px">${esc(t.magnitude)}</span><span class="d muted">detector ${t.detector}</span></div>
+      <div class="card kpi"><span class="l">Confidence</span><span class="v">${(t.confidence*100).toFixed(0)} %</span><span class="d muted">z-score vs baseline variance</span></div>
+      <div class="card kpi"><span class="l">Blast radius</span><span class="v" style="font-size:18px">${esc(t.radius)}</span><span class="d muted">from version stamps on outputs</span></div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card"><h2>Investigator hypotheses (read-only model)</h2>${hyps}<div class="note">The investigator proposes causes. It cannot change budgets, policies, routes or task records.</div></div>
+      <div class="card"><h2>Proposed action</h2><dl class="field"><dt>Action</dt><dd class="mono">${t.action.name}</dd><dt>Parameters</dt><dd class="mono">${esc(JSON.stringify(t.action.params))}</dd><dt>Blast radius</dt><dd>${esc(t.action.radius)}</dd><dt>Approval band</dt><dd>${t.action.band==='pre-approved'?'<span class="pill ok">within pre-approved band · rule may sign</span>':'<span class="pill warn">human signature required</span>'}</dd><dt>Bundle</dt><dd class="mono">${t.bundle}</dd><dt>Model pin</dt><dd class="mono">${t.modelPin}</dd></dl>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn primary" id="approve" ${canApprove?'':'disabled'}>Sign and approve</button><button class="btn" id="verify" ${t.state==='remediate'||t.state==='verify'?'':'disabled'}>Request verification</button><button class="btn" id="toev">Open evidence ${t.evidence}</button></div>
+      <div class="sig" style="margin-top:10px">signature: ed25519 · signer key ${canApprove?'(your registered key)':'—'} · payload sha256 of action+params</div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h2>History (append-only)</h2><div class="chain">${t.history.map(h=>`<div class="e"><span class="k">${h[0]}</span><span>${h[1]}</span><span>${esc(h[2])}</span></div>`).join('')}</div></div>`;
+  },
+  fleet(d){
+    const rows=d.fleet.tasks.map(t=>{const tp=t.tokens[0]/t.tokens[1]*100, cp=Math.min(t.calls[0]/t.calls[1]*100,100); const over=t.calls[0]>t.calls[1];
+      return `<tr class="stripe ${t.state==='paused'||t.state==='failed'?'crit':t.state==='waiting'?'warn':'ok'}"><td class="mono">${t.id}</td><td>${t.type}</td><td class="mono muted">${t.worker}</td><td><span class="pill ${t.state==='running'?'ok':t.state==='done'?'info':t.state==='waiting'?'warn':'crit'}">${t.state}</span></td><td class="mono">${t.step}</td>
+      <td><div class="bar ${tp>85?'w':''}"><i style="width:${tp.toFixed(0)}%"></i></div><span class="mono muted">${(t.tokens[0]/1000).toFixed(1)}k / ${(t.tokens[1]/1000).toFixed(0)}k</span></td>
+      <td><div class="bar ${over?'c':cp>80?'w':''}"><i style="width:${cp.toFixed(0)}%"></i></div><span class="mono ${over?'':'muted'}" style="${over?'color:var(--crit)':''}">${t.calls[0]} / ${t.calls[1]}${over?' · refused':''}</span></td>
+      <td class="mono">${t.lease}</td><td class="mono">${t.fence}</td><td class="mono ${t.reissues>1?'':'muted'}" style="${t.reissues>1?'color:var(--warn)':''}">${t.reissues}</td></tr>`;}).join('');
+    const bands=Object.entries(d.fleet.bands).map(([k,v])=>`<tr><td>${k}</td><td class="mono">${v.calls}</td><td class="mono">${v.step}</td><td class="mono">${v.tokens}</td><td class="mono">${v.reissue}</td></tr>`).join('');
+    return header("Fleet","One task, one worker, one key. Spend is against the budget inside the task key; the ledger lives in Redis at Kong.")+
+    `<div class="grid g21"><div class="card"><h2>Tasks</h2><div class="tw"><table><tr><th>Task</th><th>Type</th><th>Worker</th><th>State</th><th>Step</th><th>Tokens</th><th>Calls</th><th>Lease</th><th>Fence</th><th>Key re-issues</th></tr>${rows}</table></div></div>
+    <div><div class="card"><h2>Key re-issues · 24 h</h2>${spark(d.fleet.reissues24h,260,56,'var(--warn)')}<div class="note">Rising since 16:00. A re-issue means a task outlived its key: the early sign of a slow route, before any 429.</div></div>
+    <div class="card" style="margin-top:14px"><h2>Normal bands (from 30 days)</h2><table><tr><th>Type</th><th>Calls</th><th>Step</th><th>Tokens</th><th>Re-issue</th></tr>${bands}</table></div></div></div>`;
+  },
+  endpoints(d){
+    const cards=d.endpoints.map(e=>{const regions=Object.entries(e.served24h).map(([r,p])=>`<span class="mono">${r} ${p}%</span>`).join(' · ');
+      return `<div class="card stripe ${e.status==='ok'?'ok':'warn'}"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>${e.route}</b>${e.status==='ok'?'<span class="pill ok">in band</span>':'<span class="pill warn">attention</span>'}</div>
+      <dl class="field" style="margin-top:10px"><dt>Provider · pin</dt><dd class="mono">${e.provider} · ${esc(e.pin)}</dd><dt>Lifecycle</dt><dd>${e.lifecycle.includes('Legacy')?'<span class="pill warn">'+e.lifecycle+'</span>':e.lifecycle}</dd><dt>Served regions 24 h</dt><dd>${regions}<br><span class="muted">allowed: ${e.regions.join(', ')}</span></dd><dt>Admission semaphore</dt><dd class="mono">${e.sem[1]} in flight max ${e.sem[0]!==e.sem[1]?'<span class="pill warn">lowered from '+e.sem[0]+'</span>':''}</dd><dt>Quota headroom</dt><dd class="mono">${e.quota}</dd><dt>Cost</dt><dd class="mono">${e.cost}</dd></dl>
+      <div class="grid g3" style="margin-top:10px;gap:8px"><div><div class="muted" style="font-size:11px">TTFT P99 (s) · band ${e.band}</div>${spark(e.ttft,150,40,e.status==='ok'?'var(--good)':'var(--warn)',e.band)}</div><div><div class="muted" style="font-size:11px">429 / h</div>${spark(e.r429,150,40,'var(--crit)')}</div><div><div class="muted" style="font-size:11px">invalid 200s / h</div>${spark(e.invalid,150,40,'var(--crit)')}</div></div></div>`;}).join('');
+    return header("Endpoints","We own no GPU. Every route is pinned, polled for lifecycle, checked for region, and watched for a busy provider.")+`<div class="grid g2">${cards}</div>`;
+  },
+  evaluation(d){
+    const a=d.evaluation.agents[state.agent]; const labels=Array.from({length:a.nightly.length},(_,i)=>`d-${a.nightly.length-1-i}`);
+    const tabs=Object.keys(d.evaluation.agents).map(k=>`<button class="btn ${k===state.agent?'primary':''}" data-agent="${k}">${k}</button>`).join(' ');
+    const attr=a.attribution.map(([k,v])=>`<div class="diffrow"><span class="mono">${k}</span><div class="bar ${v<-1?'c':v<0?'w':''}" style="min-width:120px"><i style="width:${Math.min(Math.abs(v)*25,100)}%"></i></div><span class="mono" style="color:${v<-1?'var(--crit)':'var(--ink)'}">${v>0?'+':''}${v.toFixed(1)} pts</span><span></span></div>`).join('');
+    const pre=d.evaluation.preprod.map(p=>`<tr class="stripe ${p.result.startsWith('blocked')?'crit':'ok'}"><td class="mono">${p.bundle}</td><td class="mono">${p.business}</td><td class="mono">${p.user}</td><td class="mono">${p.edge}</td><td>${p.result.startsWith('blocked')?'<span class="pill crit">'+p.result+'</span>':'<span class="pill ok">'+p.result+'</span>'}</td></tr>`).join('');
+    return header("Evaluation","Accuracy is a nightly number with a band, replayed from yesterday’s redacted traffic and judged by a second model family.")+
+    `<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">${tabs}</div>
+    <div class="grid g21"><div class="card"><h2>Nightly score · band ${a.band[0]} ± ${a.band[1]}</h2>${lineChart([{v:a.nightly,c:'var(--accent)'}],labels,{band:a.band})}<div class="note">Dip 11 days ago was an unapproved tuple (ACRA-3104, rolled back). The last two nights are in band; the held tasks are excluded from the score until released.</div></div>
+    <div><div class="card"><h2>Attribution (last night)</h2>${attr}</div><div class="card" style="margin-top:14px"><h2>Judge</h2><div class="mono">${a.judge}</div><div class="note">Second model family, pinned. If calibration moves, the night is marked unreliable and no ticket is raised.</div></div></div></div>
+    <div class="grid g2" style="margin-top:14px"><div class="card"><h2>P99 of per-case scores</h2>${lineChart([{v:a.p99,c:'var(--warn)'}],labels)}<div class="note">The tail moves before the mean. Loops and retries hurt a few cases badly.</div></div>
+    <div class="card"><h2>Tool accuracy (last night)</h2><table><tr><th>Server</th><th>Parseable</th><th>Used correctly</th><th>Errors</th></tr><tr><td class="mono">lookup-tools 1.8.3</td><td class="mono">99.1 %</td><td class="mono">96.4 %</td><td class="mono">429 ×3</td></tr><tr><td class="mono">writeback-tools 2.2.0</td><td class="mono">100 %</td><td class="mono">98.8 %</td><td class="mono">0</td></tr><tr><td class="mono">document-tools 1.4.1</td><td class="mono">97.3 %</td><td class="mono">94.0 %</td><td class="mono">timeout ×6</td></tr></table><div class="note">Scored by the nightly replay alongside agent accuracy; a drop below the server’s band is a tool drift ticket, not an agent one.</div></div>
+    <div class="card"><h2>Golden-set template</h2><table><tr><th>Section</th><th>Cases</th><th>Pass rule</th></tr><tr><td>Business-approved</td><td class="mono">${a.set.business}</td><td>all must pass</td></tr><tr><td>User-approved</td><td class="mono">${a.set.user}</td><td>≥ 98 %, no regression</td></tr><tr><td>Rare and real edges</td><td class="mono">${a.set.edge}</td><td>mean within band</td></tr></table><div class="note">Refreshed ${a.set.refreshed} · 10–20 % monthly from capture</div></div></div>
+    <div class="card" style="margin-top:14px"><h2>Pre-production gate</h2><div class="tw"><table><tr><th>Bundle</th><th>Business</th><th>User</th><th>Edge</th><th>Result</th></tr>${pre}</table></div></div>`;
+  },
+  baselines(d){
+    const cards=d.baselines.map(b=>{const worst=b.fields.some(f=>f[3]==='crit')?'crit':b.fields.some(f=>f[3]==='warn')?'warn':'ok';
+      return `<div class="card stripe ${worst}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b>${b.layer}</b><span class="mono muted">${b.version} · signed ${b.signed} · ${b.approvers}</span></div>
+      <div style="margin-top:8px">${b.fields.map(f=>`<div class="diffrow"><span>${f[0]}</span><span class="mono muted">baseline ${esc(f[1])}</span><span class="mono">live ${esc(f[2])}</span>${f[3]==='ok'?'<span class="pill ok">match</span>':f[3]==='warn'?'<span class="pill warn">drift</span>':'<span class="pill crit">drift</span>'}</div>`).join('')}</div></div>`;}).join('');
+    return header("Baselines","Signed snapshots of what we agreed, per layer. They change only by pull request with two approvers; the control plane signs the merge.")+`<div class="grid g2">${cards}</div>`;
+  },
+  evidence(d){
+    const keys=Object.keys(d.evidence||{});
+    if(keys.length===0){return header("Evidence","Every hop for one task, kernel events inline, chain verified. The export is signed; nothing is assembled by hand.")+`<div class="card"><div class="muted">No traces yet. Inject a drift — e.g. <span class="mono">workload inject-drift combinative</span> — to generate a signed evidence trace.</div></div>`;}
+    if(!d.evidence[state.evidence]) state.evidence=keys[0];
+    const e=d.evidence[state.evidence]; const opts=keys.map(k=>`<option ${k===state.evidence?'selected':''}>${k}</option>`).join('');
+    return header("Evidence","Every hop for one task, kernel events inline, chain verified. The export is signed; nothing is assembled by hand.")+
+    `<div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label for="evsel" class="muted">trace</label><select id="evsel" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-family:var(--mono)">${opts}</select><span class="pill ok">chain ${e.chain}</span><button class="btn" id="export">Signed export</button></div>
+    <dl class="field" style="margin-top:12px"><dt>task_id</dt><dd class="mono">${e.task}</dd><dt>caller</dt><dd class="mono">${e.caller}</dd><dt>bundle</dt><dd class="mono">${e.bundle}</dd></dl>
+    <div class="chain" style="margin-top:12px">${e.entries.map(x=>`<div class="e"><span class="k">${x[0]}</span><span class="${x[1]==='kernel'?'kern':''}">${x[1]}</span><span>${esc(x[2])}</span></div>`).join('')}</div>
+    <div class="note">Kernel rows come from the eBPF probe; they are what prove a worker did, or did not, reach a host directly.</div></div>`;
+  },
+  policy(d){
+    return header("Policy","Kyverno blocks at the door; the same policies run every five minutes against what is already there. ACRA reads both.")+
+    `<div class="grid g2"><div class="card"><h2>Policies</h2><table><tr><th>Policy</th><th>Mode</th><th>Last scan</th></tr>${d.policy.policies.map(p=>`<tr><td class="mono">${p[0]}</td><td>${p[1]==='Enforce'?'<span class="pill ok">Enforce</span>':'<span class="pill warn">Audit</span>'}</td><td class="muted">${p[2]}</td></tr>`).join('')}</table><div class="note">${d.policy.lastScan}</div></div>
+    <div class="card"><h2>Propose · validate · approve · apply</h2><table><tr><th>Item</th><th>Action</th><th>Validation</th><th>Approval</th></tr>${d.policy.queue.map(q=>`<tr><td class="mono">${q[0]}</td><td class="mono">${q[1]}</td><td><span class="pill ok">${q[2]}</span></td><td><span class="pill warn">${q[3]}</span></td></tr>`).join('')}</table><div class="note">A signature covers the exact bytes of the change. A swapped change fails verification at apply.</div></div></div>`;
+  }
+};
+
+function render(){
+  const d=DATA; const nav=$('#nav');
+  nav.innerHTML=SCREENS.map(s=>`<button data-screen="${s.id}" ${s.id===state.screen?'aria-current="page"':''}>${s.name}${s.count?`<span class="n">${s.count(d)}</span>`:''}</button>`).join('');
+  $('#main').innerHTML=R[state.screen](d);
+  $('#lastpoll').textContent=new Date().toLocaleTimeString();
+  try{history.replaceState(null,'','#'+state.screen);}catch(e){}
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-screen]'); if(b){state.screen=b.dataset.screen;state.ticket=null;render();return;}
+  const r=e.target.closest('[data-ticket]'); if(r){state.screen='tickets';state.ticket=r.dataset.ticket;render();window.scrollTo(0,0);return;}
+  const a=e.target.closest('[data-agent]'); if(a){state.agent=a.dataset.agent;render();return;}
+  if(e.target.id==='back'){state.ticket=null;render();return;}
+  if(e.target.id==='toev'){const t=DATA.tickets.find(x=>x.id===state.ticket);state.evidence=t.evidence;state.screen='evidence';state.ticket=null;render();return;}
+  if(e.target.id==='approve'){const t=DATA.tickets.find(x=>x.id===state.ticket);t.state='remediate';t.history.push([new Date().toISOString().slice(11,19),'authorise','signed (demo key) · action '+t.action.name]);t.history.push([new Date().toISOString().slice(11,19),'remediate',t.action.name+' applied']);toast('Signed. Action applied; verification scheduled.');render();return;}
+  if(e.target.id==='verify'){const t=DATA.tickets.find(x=>x.id===state.ticket);t.state='verify';t.history.push([new Date().toISOString().slice(11,19),'verify','detector re-run requested']);toast('Verification requested: the detector that opened the ticket runs again.');render();return;}
+  if(e.target.id==='export'){toast('Signed export prepared (demo).');return;}
+});
+document.addEventListener('change',e=>{if(e.target.id==='evsel'){state.evidence=e.target.value;render();}});
+/* Live wiring: merge the apiserver's snapshot (tickets + evidence) over the
+   built-in seed, then render. Falls back to the seed if served as a static file. */
+async function refresh(){try{const r=await fetch('/v1/snapshot');if(r.ok){const j=await r.json();if(j&&j.data){Object.assign(DATA,j.data);}}}catch(e){}render();}
+refresh();
+setInterval(refresh,3000);
+</script>

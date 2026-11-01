@@ -1,0 +1,24 @@
+# Sample AgentPolicy — the approved set + invariants + thresholds for one agent.
+# Synthetic values; matches the demo policy the gate enforces.
+apiVersion: acra.dev/v1alpha1
+kind: AgentPolicy
+metadata:
+  name: decision-agent
+  namespace: acra-system
+spec:
+  agent: decision-agent
+  approvedTuples:
+    - { prompt: p-30, manifest: "1.8.3", ruleset: e8d3, formula: f-6 }
+  baseline:
+    ref: a-0210
+  invariants:
+    - derived-not-independent
+    - no-status-by-summary
+    - epoch-is-a-fence
+    - authority-read-against-now
+    - gate-checks-not-decides
+    - only-approved-tuples-run
+    - unknown-stays-unknown
+  thresholds:
+    driftMagnitude: 2
+    minIndependentRoots: 2

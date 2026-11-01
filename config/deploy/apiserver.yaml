@@ -1,0 +1,52 @@
+# ACRA apiserver on Kubernetes: Deployment + NodePort Service.
+# The kind cluster (config/kind/kind.yaml) maps node:30080 -> host:8080, so the
+# console is reachable at http://localhost:8080 once deployed.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acra-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acra-apiserver
+  namespace: acra-system
+  labels: { app: acra-apiserver }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: acra-apiserver }
+  template:
+    metadata:
+      labels: { app: acra-apiserver }
+    spec:
+      containers:
+        - name: apiserver
+          image: acra:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://acra-otel-collector.acra-system.svc:4317
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acra-apiserver
+  namespace: acra-system
+spec:
+  type: NodePort
+  selector: { app: acra-apiserver }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      nodePort: 30080   # mapped to host:8080 by kind

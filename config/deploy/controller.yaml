@@ -1,0 +1,59 @@
+# ACRA operator: ServiceAccount + RBAC + Deployment.
+# Watches AgentPolicy and writes drift status read from the apiserver.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: acra-controller
+  namespace: acra-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: acra-controller
+rules:
+  - apiGroups: ["acra.dev"]
+    resources: ["agentpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["acra.dev"]
+    resources: ["agentpolicies/status"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: acra-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: acra-controller
+subjects:
+  - kind: ServiceAccount
+    name: acra-controller
+    namespace: acra-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acra-controller
+  namespace: acra-system
+  labels: { app: acra-controller }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: acra-controller }
+  template:
+    metadata:
+      labels: { app: acra-controller }
+    spec:
+      serviceAccountName: acra-controller
+      containers:
+        - name: controller
+          image: acra:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/app/controller"]
+          env:
+            - name: APISERVER_URL
+              value: http://acra-apiserver.acra-system.svc
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits:   { cpu: 250m, memory: 128Mi }

@@ -1,0 +1,10 @@
+# kind cluster for ACRA v0.1 — single control-plane node is enough for the demo.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: acra
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # apiserver/console NodePort (wired in M6)
+        hostPort: 8080
+        protocol: TCP

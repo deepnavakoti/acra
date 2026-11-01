@@ -1,0 +1,9 @@
+.git
+bin/
+dist/
+*.db
+*.bolt
+docs/
+test/
+*.md
+.DS_Store

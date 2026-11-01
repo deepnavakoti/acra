@@ -1,0 +1,20 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# build artifacts
+dist/
+*.tar
+
+# local data (evidence store, kind)
+*.db
+*.bolt
+kubeconfig*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/

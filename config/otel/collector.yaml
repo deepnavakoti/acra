@@ -1,0 +1,64 @@
+# ACRA Pattern 2 — continuous proof via OpenTelemetry.
+# A minimal OTel collector: receives ACRA's gate spans over OTLP and logs them
+# (debug exporter) so you can see the proof attributes land. Swap the exporter
+# for your backend (Tempo, Jaeger, a vendor) in a real deployment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acra-otel-collector
+  namespace: acra-system
+data:
+  collector.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+    exporters:
+      debug:
+        verbosity: detailed
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [debug]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acra-otel-collector
+  namespace: acra-system
+  labels: { app: acra-otel-collector }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: acra-otel-collector }
+  template:
+    metadata:
+      labels: { app: acra-otel-collector }
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector:0.118.0
+          args: ["--config=/etc/otel/collector.yaml"]
+          ports:
+            - containerPort: 4317
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+      volumes:
+        - name: config
+          configMap:
+            name: acra-otel-collector
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acra-otel-collector
+  namespace: acra-system
+spec:
+  selector: { app: acra-otel-collector }
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
