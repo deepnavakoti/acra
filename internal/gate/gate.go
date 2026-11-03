@@ -63,12 +63,37 @@ type Detector interface {
 
 // Evaluate runs the detectors in order and returns the first HOLD, else ADMIT.
 // Unknown is never admitted (invariant 7) — detectors return HOLD when they
-// cannot prove safety.
+// cannot prove safety. The gate itself fails closed: an empty detector set, a
+// nil detector, or a detector that panics yields HOLD, never ADMIT.
 func Evaluate(w Write, p Policy, env Env, dets []Detector) model.GateResult {
+	if len(dets) == 0 {
+		return model.GateResult{
+			Verdict: model.Hold, Detector: "acra.gate", Reason: "no detectors loaded",
+			Magnitude: "0 detectors", Confidence: 1.0, Radius: "all writes held until detectors load",
+		}
+	}
 	for _, d := range dets {
-		if r := d.Check(w, p, env); r.Verdict == model.Hold {
+		if r := safeCheck(d, w, p, env); r.Verdict == model.Hold {
 			return r
 		}
 	}
 	return model.GateResult{Verdict: model.Admit}
+}
+
+// safeCheck runs one detector and converts a nil detector or a panic into HOLD.
+func safeCheck(d Detector, w Write, p Policy, env Env) (res model.GateResult) {
+	id := "acra.gate"
+	if d == nil {
+		return model.GateResult{Verdict: model.Hold, Detector: id, Reason: "nil detector", Confidence: 1.0, Radius: "write held"}
+	}
+	id = d.ID()
+	defer func() {
+		if r := recover(); r != nil {
+			res = model.GateResult{
+				Verdict: model.Hold, Detector: id, Reason: "detector panic",
+				Magnitude: "detector could not complete", Confidence: 1.0, Radius: "write held; unknown is never admitted",
+			}
+		}
+	}()
+	return d.Check(w, p, env)
 }

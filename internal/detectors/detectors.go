@@ -48,8 +48,14 @@ type C2 struct{}
 
 func (C2) ID() string { return "acra.c2" }
 func (C2) Check(w gate.Write, p gate.Policy, _ gate.Env) model.GateResult {
-	if w.Graph == nil || p.MinIndependentRoots <= 0 {
+	if p.MinIndependentRoots <= 0 || len(w.Claims) == 0 {
 		return admit()
+	}
+	if w.Graph == nil {
+		// Claims need support but no lineage was supplied: independence is
+		// unknown, and unknown is never admitted (invariant 7).
+		return hold("acra.c2", "independence unknown",
+			"claims present but no lineage graph", 0.90, "task held; lineage required")
 	}
 	for _, c := range w.Claims {
 		if n := w.Graph.Independence(c); n < p.MinIndependentRoots {
