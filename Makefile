@@ -6,9 +6,13 @@ IMAGES  := controller gate apiserver workload
 KIND    ?= combinative   # drift kind for `make inject`
 
 IMAGE   ?= acra:dev
+CHART   := deploy/helm/acra
+VERSION ?= 0.2.0
+NS      ?= acra-system
 
 .PHONY: build test fmt vet tidy generate run inject \
-        kind-up docker-build install deploy up install-kyverno demo console kind-down
+        kind-up docker-build install deploy up install-kyverno demo console kind-down \
+        helm-lint helm-template helm-package helm-install helm-uninstall
 
 ## --- real now ---
 build: ## compile all cmds
@@ -64,3 +68,22 @@ console: ## print the console URL (kind maps it to the host)
 demo: inject ## inject a combinative drift (alias for `make inject`)
 
 kind-down: ; kind delete cluster --name $(CLUSTER)
+
+## --- Helm release ---
+helm-lint: ## lint the chart
+	helm lint $(CHART)
+
+helm-template: ## render the chart with defaults
+	helm template acra $(CHART) -n $(NS)
+
+helm-package: ## package the chart into dist/acra-$(VERSION).tgz
+	@mkdir -p dist
+	helm package $(CHART) --version $(VERSION) --app-version $(VERSION) -d dist
+
+helm-install: ## install/upgrade: make helm-install IMAGE_REPO=... K8S_NS=agents,kagent
+	helm upgrade --install acra $(CHART) -n $(NS) --create-namespace \
+	  --set image.repository=$(or $(IMAGE_REPO),ghcr.io/deepnavakoti/acra) --set image.tag=$(VERSION) \
+	  $(if $(K8S_NS),--set 'adapters.kubernetes.namespaces={$(K8S_NS)}')
+
+helm-uninstall: ## uninstall (the PVC and generated Secret are kept on purpose)
+	helm uninstall acra -n $(NS)

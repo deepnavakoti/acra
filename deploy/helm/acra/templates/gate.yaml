@@ -1,0 +1,103 @@
+{{- if .Values.gate.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "acra.fullname" . }}-gate-policy
+  labels: {{ include "acra.labels" . | nindent 4 }}
+data:
+  policy.json: |
+{{ .Values.gate.policy | toPrettyJson | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "acra.fullname" . }}-gate
+  labels: {{ include "acra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gate
+spec:
+  replicas: {{ .Values.gate.replicas }}
+  {{- if .Values.gate.persistence.enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels: {{ include "acra.selector" (dict "Release" .Release "component" "gate") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "acra.selector" (dict "Release" .Release "component" "gate") | nindent 8 }}
+      annotations:
+        checksum/policy: {{ .Values.gate.policy | toJson | sha256sum }}
+    spec: {{ include "acra.podSpecCommon" . | nindent 6 }}
+      containers:
+        - name: gate
+          image: {{ include "acra.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/gate"]
+          args:
+            - -addr=:8081
+            - -policy=/etc/acra/policy/policy.json
+            {{- if .Values.gate.persistence.enabled }}
+            - -db=/data/gate-evidence.db
+            - -key-file=/etc/acra/keys/signing.key
+            {{- end }}
+          ports:
+            - { name: http, containerPort: 8081 }
+          env:
+            {{- include "acra.authEnv" . | nindent 12 }}
+            {{- with .Values.valkey }}
+            {{- if .enabled }}
+            - { name: ACRA_VALKEY_URL, value: {{ required "valkey.url is required when valkey.enabled" .url | quote }} }
+            {{- if .username }}
+            - { name: ACRA_VALKEY_USERNAME, value: {{ .username | quote }} }
+            {{- end }}
+            {{- if .passwordKey }}
+            {{- if not $.Values.auth.existingSecret }}
+            {{- fail "valkey.passwordKey needs auth.existingSecret: the chart-generated Secret does not hold a Valkey password" }}
+            {{- end }}
+            - name: ACRA_VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ include "acra.secretName" $ }}, key: {{ .passwordKey | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          securityContext: {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources: {{ toYaml .Values.gate.resources | nindent 12 }}
+          volumeMounts:
+            - { name: policy, mountPath: /etc/acra/policy, readOnly: true }
+            {{- if .Values.gate.persistence.enabled }}
+            - { name: data, mountPath: /data }
+            - { name: keys, mountPath: /etc/acra/keys, readOnly: true }
+            {{- end }}
+      volumes:
+        - name: policy
+          configMap:
+            name: {{ include "acra.fullname" . }}-gate-policy
+        {{- if .Values.gate.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "acra.fullname" . }}-gate-data
+        - name: keys
+          secret:
+            secretName: {{ include "acra.secretName" . }}
+            defaultMode: 0440
+            items:
+              - { key: signing-key, path: signing.key }
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "acra.fullname" . }}-gate
+  labels: {{ include "acra.labels" . | nindent 4 }}
+spec:
+  selector: {{ include "acra.selector" (dict "Release" .Release "component" "gate") | nindent 4 }}
+  ports:
+    - { name: http, port: 80, targetPort: http }
+{{- end }}

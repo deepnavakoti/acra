@@ -1,0 +1,172 @@
+# ACRA Helm values. Everything cloud-related is opt-in and read-only.
+
+image:
+  repository: ghcr.io/deepnavakoti/acra
+  tag: ""            # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# --- authentication ----------------------------------------------------------
+# ACRA is open when no token is configured. In a cluster always enable auth.
+auth:
+  # Name of an existing Secret you manage. Keys (all optional except signing-key):
+  #   api-token    admin token (>= 16 chars)
+  #   api-tokens   "token:principal:role|role,..." roles: reader, ingest, admin
+  #   signing-key  64 hex chars (32-byte ed25519 seed) for the evidence chain
+  existingSecret: ""
+  # When existingSecret is empty the chart creates a Secret with generated values
+  # (kept across upgrades via lookup). Fetch the token afterwards, see NOTES.txt.
+  apiToken: ""       # optional fixed admin token; random if empty
+  signingKey: ""     # optional fixed 64-hex seed; random if empty
+
+apiserver:
+  replicas: 1        # keep 1: bbolt stores are single-writer (see docs/09)
+  autoInvestigate: false   # run RCA automatically when an incident opens
+  demo: false        # expose POST /v1/demo/inject (never in production)
+  # MCP server (POST /mcp): the read-only tool gateway for MCP clients such as KAgent.
+  mcp:
+    enabled: true
+  # A2A server (POST /a2a) and Agent Card (/.well-known/agent-card.json).
+  a2a:
+    enabled: true
+  # Base URL peers use to reach ACRA; written into the Agent Card. Empty = the
+  # in-cluster service URL. Set it when you expose ACRA through an Ingress/Gateway.
+  publicUrl: ""
+  # Browser origins allowed to call /mcp and /a2a. Empty = none. Non-browser
+  # clients (agents) send no Origin header and are unaffected.
+  allowedOrigins: []
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: "1",  memory: 512Mi }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+persistence:
+  enabled: true      # evidence chain + incidents survive restarts
+  size: 5Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  existingClaim: ""
+
+# --- cloud and cluster adapters (read-only evidence for RCA) ------------------
+adapters:
+  kubernetes:
+    enabled: true
+    # Allowlist of namespaces ACRA may read pods/events/logs from. An agent's
+    # namespace must be listed here for K8s evidence to be collected.
+    namespaces: []           # e.g. [agents, kagent, payments]
+    # true: ClusterRole + ClusterRoleBinding (reads any listed namespace).
+    # false: a Role + RoleBinding is created in each listed namespace only.
+    clusterWide: false
+  azure:
+    enabled: false
+    workspaceId: ""          # Log Analytics workspace GUID
+    # Pick one identity. Prefer workload identity / managed identity.
+    managedIdentityClientId: ""   # user-assigned MSI client id (optional)
+    tenantId: ""
+    clientId: ""                  # service principal (not recommended)
+    clientSecretKey: ""           # key inside auth.existingSecret holding the secret
+  aws:
+    enabled: false
+    region: ""
+    logGroups: []            # CloudWatch log group names
+    # IRSA: annotate the ServiceAccount with the role (serviceAccount.annotations).
+  gcp:
+    enabled: false
+    project: ""
+    # GKE Workload Identity: annotate the ServiceAccount with the GSA email.
+  kagent:
+    enabled: false
+    url: ""                  # KAgent A2A endpoint (advisory only, verify the method)
+    method: ""
+    tokenKey: ""             # key inside auth.existingSecret
+
+# Optional LLM used only to narrate RCA and as a rubric judge.
+# Rules decide hypotheses and confidence; the LLM cannot change them.
+llm:
+  enabled: false
+  baseUrl: ""                # OpenAI-compatible, https only
+  model: ""
+  apiKeyKey: ""              # key inside auth.existingSecret
+
+serviceAccount:
+  create: true
+  name: ""
+  # IRSA:                 eks.amazonaws.com/role-arn: arn:aws:iam::123:role/acra-reader
+  # Azure workload id:    azure.workload.identity/client-id: <client-id>
+  # GKE workload id:      iam.gke.io/gcp-service-account: acra@PROJECT.iam.gserviceaccount.com
+  annotations: {}
+  podLabels: {}              # e.g. azure.workload.identity/use: "true"
+
+# --- Valkey (optional shared state for the gate's epoch fence) ---------------------
+# Default off: epochs live in gate memory and reset on restart, so run ONE gate
+# replica. With Valkey on, the fence survives restarts and is shared, so more
+# than one gate replica is safe (do not combine with gate.persistence).
+# Valkey holds only the epoch fence. The evidence chain stays in bbolt.
+# ACRA does not install Valkey; point it at one you run (valkey:// or rediss://).
+valkey:
+  enabled: false
+  url: ""                    # e.g. rediss://valkey.data.svc:6379
+  username: ""               # optional ACL user
+  passwordKey: ""            # key inside auth.existingSecret holding the password
+
+# --- gate (admit/hold decisions for agent writes) -------------------------------
+gate:
+  enabled: true
+  replicas: 1
+  # Server-side policy. Callers cannot supply it. An empty approvedTuples list is
+  # refused and the gate refuses to start (fail closed).
+  policy:
+    approvedTuples:
+      - { prompt: "p1", manifest: "m1", ruleset: "r1", formula: "f1" }
+    invariants: []
+    minIndependentRoots: 2
+    driftMagnitude: 0
+  persistence:
+    enabled: false           # anchor gate decisions in a separate evidence file
+    size: 1Gi
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+# --- operator (AgentPolicy CRD) ---------------------------------------------------
+controller:
+  enabled: true
+  installCRDs: true          # CRDs are shipped in crds/ and installed by Helm on first install
+  resources:
+    requests: { cpu: 25m,  memory: 32Mi }
+    limits:   { cpu: 250m, memory: 128Mi }
+
+# --- OTLP ingest collector ----------------------------------------------------------
+# Receives OTLP (gRPC 4317, HTTP 4318) from agents in ANY namespace and forwards
+# OTLP/JSON to the apiserver. ACRA ingests OTLP/JSON only (no protobuf).
+collector:
+  enabled: true
+  image: otel/opentelemetry-collector-contrib:0.118.0
+  replicas: 1
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+# --- extras ---------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  # Namespace labels allowed to reach the collector and apiserver. Empty = any
+  # namespace in the cluster may send telemetry.
+  ingressNamespaceSelectors: []   # e.g. [{matchLabels: {acra.dev/agents: "true"}}]
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile: { type: RuntimeDefault }
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }

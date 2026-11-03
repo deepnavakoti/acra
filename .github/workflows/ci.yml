@@ -16,3 +16,10 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/acra
+      - run: helm template acra deploy/helm/acra --set adapters.kubernetes.namespaces='{agents}' > /dev/null

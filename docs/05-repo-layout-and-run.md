@@ -1,5 +1,15 @@
 # ACRA — Repo Layout & Build/Run
 
+> **v0.2 update.** The reliability pipeline, cloud adapters and Helm chart were added after this document was first written. The layout below is still correct for the drift-control core. What changed:
+>
+> - New packages under `internal/`: `agentrun` (events → runs), `contract` (agent contracts and evaluation), `incident`, `rca`, `adapters` (+ `kubeclient`; Azure, AWS, GCP, Kubernetes, KAgent), `ingest` (OTLP/JSON), `pipeline`, `gateway` (read-only tool gateway), `gatesvc` (HTTP gate), `identity` (roles), `redact`, `llm`.
+> - `acra-gate` is now a standalone HTTP service (`POST /v1/gate/evaluate`), not a webhook.
+> - `deploy/helm/acra/` is the production install. `config/deploy/*.yaml` remain the minimal kind demo.
+> - Operations guide: [09-cluster-and-cloud-operations.md](09-cluster-and-cloud-operations.md).
+>
+> Extra make targets: `helm-lint`, `helm-template`, `helm-package`, `helm-install`, `helm-uninstall`.
+> Build and test with Go 1.26+: `go build ./... && go vet ./... && go test ./...`.
+
 Go, Kubebuilder-influenced. v1 collapses the 7 logical components into **4 processes + 2 off-the-shelf** so it runs clean on one `kind` cluster.
 
 ---

@@ -44,22 +44,29 @@ func Init(ctx context.Context) func(context.Context) error {
 	return tp.Shutdown
 }
 
-// RecordGate emits one span for a gate decision, with both id sets.
+// RecordGate emits one span for a gate decision, with both id sets. Operational
+// ids come from the ticket; ids that are unknown are omitted, never invented.
 func RecordGate(ctx context.Context, t model.Ticket) {
 	_, span := tracer.Start(ctx, "acra.gate.evaluate")
 	defer span.End()
-	span.SetAttributes(
+	attrs := []attribute.KeyValue{
 		// operational correlation ids
 		attribute.String("task.id", t.ID),
-		attribute.Int("attempt", 1),
-		attribute.Int("step", 1),
-		attribute.Int("epoch", 8),
 		attribute.String("caller.spiffe", "spiffe://acra/"+t.Agent),
 		// ACRA proof attributes
 		attribute.String("acra.detector", t.Detector),
 		attribute.String("acra.verdict", string(model.Hold)),
 		attribute.String("acra.model.version", t.ModelPin),
-		attribute.String("acra.context.sources", "1"),
 		attribute.String("acra.response.fingerprint", t.Bundle),
-	)
+	}
+	if t.Epoch > 0 {
+		attrs = append(attrs, attribute.Int("epoch", t.Epoch))
+	}
+	if t.Attempt > 0 {
+		attrs = append(attrs, attribute.Int("attempt", t.Attempt))
+	}
+	if t.Step > 0 {
+		attrs = append(attrs, attribute.Int("step", t.Step))
+	}
+	span.SetAttributes(attrs...)
 }

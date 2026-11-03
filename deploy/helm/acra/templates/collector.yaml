@@ -1,0 +1,132 @@
+{{- if .Values.collector.enabled }}
+{{- $fn := include "acra.fullname" . }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $fn }}-collector
+  labels: {{ include "acra.labels" . | nindent 4 }}
+---
+# The k8sattributes processor stamps k8s.namespace.name / pod / deployment on every
+# span from the sender's pod IP, so agents need not set the namespace themselves.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fn }}-collector
+  labels: {{ include "acra.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "deployments"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fn }}-collector
+  labels: {{ include "acra.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fn }}-collector
+subjects:
+  - kind: ServiceAccount
+    name: {{ $fn }}-collector
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fn }}-collector
+  labels: {{ include "acra.labels" . | nindent 4 }}
+data:
+  collector.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:4317 }
+          http: { endpoint: 0.0.0.0:4318 }
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 200
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.deployment.name, k8s.node.name]
+        pod_association:
+          - sources: [{ from: resource_attribute, name: k8s.pod.ip }]
+          - sources: [{ from: connection }]
+      batch: {}
+    exporters:
+      otlphttp/acra:
+        endpoint: http://{{ $fn }}-apiserver:{{ .Values.apiserver.service.port }}
+        encoding: json            # ACRA ingests OTLP/JSON only
+        headers:
+          Authorization: "Bearer ${env:ACRA_INGEST_TOKEN}"
+        retry_on_failure: { enabled: true }
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [otlphttp/acra]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fn }}-collector
+  labels: {{ include "acra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  replicas: {{ .Values.collector.replicas }}
+  selector:
+    matchLabels: {{ include "acra.selector" (dict "Release" .Release "component" "collector") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "acra.selector" (dict "Release" .Release "component" "collector") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $fn }}-collector
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: collector
+          image: {{ .Values.collector.image }}
+          args: ["--config=/etc/otel/collector.yaml"]
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+          env:
+            - name: ACRA_INGEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "acra.secretName" . }}
+                  key: ingest-token
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities: { drop: [ALL] }
+          resources: {{ toYaml .Values.collector.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/otel, readOnly: true }
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fn }}-collector
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fn }}-collector
+  labels: {{ include "acra.labels" . | nindent 4 }}
+spec:
+  selector: {{ include "acra.selector" (dict "Release" .Release "component" "collector") | nindent 4 }}
+  ports:
+    - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }
+{{- end }}

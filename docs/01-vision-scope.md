@@ -50,7 +50,7 @@ Four Kubernetes-native patterns:
 
 ## Out of scope for v1 (roadmap)
 
-- Bring-your-own-agents integration (real agent frameworks / MCP adapters).
+- Bring-your-own-agents integration (real agent frameworks). ACRA itself now serves MCP and A2A (see doc 09).
 - Production hardening, HA, multi-tenant, RBAC depth.
 - Real model-provider gateways (Kong, SPIRE/SPIFFE) — referenced in design, stubbed in v1.
 - Hardened Go operator (Saideep's authentic layer, post-v1).

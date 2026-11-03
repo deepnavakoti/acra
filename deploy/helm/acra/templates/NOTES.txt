@@ -1,0 +1,66 @@
+ACRA {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+1. Admin token (kept across upgrades):
+{{- if .Values.auth.existingSecret }}
+   kubectl -n {{ .Release.Namespace }} get secret {{ .Values.auth.existingSecret }} -o jsonpath='{.data.api-token}' | base64 -d
+{{- else }}
+   kubectl -n {{ .Release.Namespace }} get secret {{ include "acra.secretName" . }} -o jsonpath='{.data.api-token}' | base64 -d
+{{- end }}
+
+2. Console and API (port-forward, then browse http://localhost:8080):
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "acra.fullname" . }}-apiserver 8080:{{ .Values.apiserver.service.port }}
+
+{{- if .Values.collector.enabled }}
+
+3. Point agents at the OTLP collector (any namespace):
+   OTEL_EXPORTER_OTLP_ENDPOINT=http://{{ include "acra.fullname" . }}-collector.{{ .Release.Namespace }}.svc:4317
+   Agent spans should carry acra.agent.id and acra.contract.version. The collector adds k8s.namespace.name.
+{{- end }}
+
+4. Register a contract (admin token):
+   curl -H "Authorization: Bearer $TOKEN" -X PUT localhost:8080/v1/contracts -d @contract.json
+
+{{- if .Values.apiserver.mcp.enabled }}
+
+5. MCP (read-only evidence tools for KAgent or any MCP client, Streamable HTTP, bearer token):
+   http://{{ include "acra.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc:{{ .Values.apiserver.service.port }}/mcp
+{{- end }}
+{{- if .Values.apiserver.a2a.enabled }}
+
+6. A2A (incidents and investigation for peer agents, bearer token):
+   Agent Card: {{ .Values.apiserver.publicUrl | default (printf "http://%s-apiserver.%s.svc:%v" (include "acra.fullname" .) .Release.Namespace .Values.apiserver.service.port) }}/.well-known/agent-card.json
+{{- end }}
+{{- if or .Values.apiserver.mcp.enabled .Values.apiserver.a2a.enabled }}
+   Give each calling agent its own token in auth.existingSecret under api-tokens
+   ("token:principal:reader"); only grant admin where investigation is wanted.
+{{- end }}
+
+{{- if not .Values.adapters.kubernetes.namespaces }}
+
+NOTE: adapters.kubernetes.namespaces is empty, so no Kubernetes evidence is collected for RCA.
+Set it to the namespaces your agents run in.
+{{- end }}
+{{- if gt (int .Values.apiserver.replicas) 1 }}
+
+WARNING: apiserver.replicas > 1 is unsupported. The bbolt stores are single-writer.
+{{- end }}
+{{- if .Values.apiserver.demo }}
+
+WARNING: apiserver.demo=true exposes the drift injection endpoint. Do not use in production.
+{{- end }}
+{{- if and .Values.gate.enabled (eq (len .Values.gate.policy.approvedTuples) 1) }}
+
+NOTE: the gate is using the placeholder policy. Set gate.policy.approvedTuples to your approved set.
+{{- end }}
+{{- if and .Values.gate.enabled (not .Values.valkey.enabled) }}
+
+NOTE: the gate epoch fence is in memory and resets when the gate restarts. Set valkey.enabled
+to persist it.
+{{- if gt (int .Values.gate.replicas) 1 }}
+WARNING: gate.replicas > 1 without Valkey gives each replica its own epoch fence. Use one replica.
+{{- end }}
+{{- end }}
+{{- if and .Values.gate.enabled .Values.valkey.enabled .Values.gate.persistence.enabled (gt (int .Values.gate.replicas) 1) }}
+
+WARNING: gate.persistence uses a single-writer bbolt file; do not run several gate replicas with it.
+{{- end }}

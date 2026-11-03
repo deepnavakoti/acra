@@ -38,6 +38,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		APIServer: apiserver,
+		Token:     os.Getenv("ACRA_API_TOKEN"),
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller")
 		os.Exit(1)

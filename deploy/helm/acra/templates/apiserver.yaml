@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "acra.fullname" . }}-apiserver
+  labels: {{ include "acra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  replicas: {{ .Values.apiserver.replicas }}
+  strategy:
+    type: Recreate   # bbolt files are single-writer; never run two pods on them
+  selector:
+    matchLabels: {{ include "acra.selector" (dict "Release" .Release "component" "apiserver") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "acra.selector" (dict "Release" .Release "component" "apiserver") | nindent 8 }}
+        {{- with .Values.serviceAccount.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec: {{ include "acra.podSpecCommon" . | nindent 6 }}
+      containers:
+        - name: apiserver
+          image: {{ include "acra.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/apiserver"]
+          args:
+            - -addr=:8080
+            - -console=/app/console/index.html
+            - -db=/data/evidence.db
+            - -incident-db=/data/incidents.db
+            - -key-file=/etc/acra/keys/signing.key
+            - -demo={{ .Values.apiserver.demo }}
+            - -mcp={{ .Values.apiserver.mcp.enabled }}
+            - -a2a={{ .Values.apiserver.a2a.enabled }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            {{- include "acra.authEnv" . | nindent 12 }}
+            - { name: ACRA_PUBLIC_URL, value: {{ .Values.apiserver.publicUrl | default (printf "http://%s-apiserver.%s.svc:%v" (include "acra.fullname" .) .Release.Namespace .Values.apiserver.service.port) | quote }} }
+            {{- if .Values.apiserver.allowedOrigins }}
+            - { name: ACRA_ALLOWED_ORIGINS, value: {{ join "," .Values.apiserver.allowedOrigins | quote }} }
+            {{- end }}
+            {{- if .Values.apiserver.autoInvestigate }}
+            - { name: ACRA_AUTO_INVESTIGATE, value: "1" }
+            {{- end }}
+            {{- with .Values.adapters.kubernetes }}
+            {{- if and .enabled .namespaces }}
+            - { name: ACRA_K8S_NAMESPACES, value: {{ join "," .namespaces | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- with .Values.adapters.azure }}
+            {{- if .enabled }}
+            - { name: ACRA_AZURE_WORKSPACE_ID, value: {{ required "adapters.azure.workspaceId is required" .workspaceId | quote }} }
+            {{- if .managedIdentityClientId }}
+            - { name: ACRA_AZURE_MSI_CLIENT_ID, value: {{ .managedIdentityClientId | quote }} }
+            {{- end }}
+            {{- if .clientSecretKey }}
+            - { name: ACRA_AZURE_TENANT_ID, value: {{ required "adapters.azure.tenantId is required with clientSecretKey" .tenantId | quote }} }
+            - { name: ACRA_AZURE_CLIENT_ID, value: {{ required "adapters.azure.clientId is required with clientSecretKey" .clientId | quote }} }
+            - name: ACRA_AZURE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ include "acra.secretName" $ }}, key: {{ .clientSecretKey | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.adapters.aws }}
+            {{- if .enabled }}
+            - { name: ACRA_AWS_REGION, value: {{ required "adapters.aws.region is required" .region | quote }} }
+            - { name: ACRA_AWS_LOG_GROUPS, value: {{ join "," (required "adapters.aws.logGroups is required" .logGroups) | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- with .Values.adapters.gcp }}
+            {{- if .enabled }}
+            - { name: ACRA_GCP_PROJECT, value: {{ required "adapters.gcp.project is required" .project | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- with .Values.adapters.kagent }}
+            {{- if .enabled }}
+            - { name: ACRA_KAGENT_URL, value: {{ required "adapters.kagent.url is required" .url | quote }} }
+            {{- if .method }}
+            - { name: ACRA_KAGENT_METHOD, value: {{ .method | quote }} }
+            {{- end }}
+            {{- if .tokenKey }}
+            - name: ACRA_KAGENT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: {{ include "acra.secretName" $ }}, key: {{ .tokenKey | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.llm }}
+            {{- if .enabled }}
+            - { name: ACRA_LLM_BASE_URL, value: {{ required "llm.baseUrl is required" .baseUrl | quote }} }
+            - { name: ACRA_LLM_MODEL, value: {{ required "llm.model is required" .model | quote }} }
+            {{- if .apiKeyKey }}
+            - name: ACRA_LLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "acra.secretName" $ }}, key: {{ .apiKeyKey | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.apiserver.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          securityContext: {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources: {{ toYaml .Values.apiserver.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: keys, mountPath: /etc/acra/keys, readOnly: true }
+            - { name: tmp,  mountPath: /tmp }
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-data" (include "acra.fullname" .)) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: keys
+          secret:
+            secretName: {{ include "acra.secretName" . }}
+            defaultMode: 0440
+            items:
+              - { key: signing-key, path: signing.key }
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.apiserver.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiserver.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiserver.affinity }}
+      affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "acra.fullname" . }}-apiserver
+  labels: {{ include "acra.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.apiserver.service.type }}
+  selector: {{ include "acra.selector" (dict "Release" .Release "component" "apiserver") | nindent 4 }}
+  ports:
+    - { name: http, port: {{ .Values.apiserver.service.port }}, targetPort: http }

@@ -7,9 +7,12 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,11 +21,16 @@ import (
 	"github.com/deepnavakoti/acra/internal/model"
 )
 
+// maxTicketsBody bounds how much of the apiserver response the operator reads.
+const maxTicketsBody = 8 << 20
+
 // AgentPolicyReconciler reconciles an AgentPolicy against live drift.
 type AgentPolicyReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
 	APIServer string // base URL of the apiserver, e.g. http://acra-apiserver.acra-system.svc
+	Token     string // optional bearer token for the apiserver (ACRA_API_TOKEN)
+	HTTP      *http.Client
 }
 
 // +kubebuilder:rbac:groups=acra.dev,resources=agentpolicies,verbs=get;list;watch
@@ -41,8 +49,17 @@ func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	tickets, err := r.fetchTickets(ctx)
 	if err != nil {
-		// apiserver not reachable yet — try again shortly, don't error-loop.
-		log.Info("apiserver unreachable; requeueing", "err", err.Error())
+		// Drift state is UNKNOWN, not clean: never report a false green
+		// (invariant 7). Record Unknown and retry shortly.
+		log.Info("apiserver unreachable; marking Unknown", "err", err.Error())
+		ap.Status.Phase = "Unknown"
+		ap.Status.Conditions = setCondition(ap.Status.Conditions, metav1.Condition{
+			Type: "Synced", Status: metav1.ConditionFalse, Reason: "ApiserverUnavailable",
+			Message: err.Error(), ObservedGeneration: ap.Generation,
+		})
+		if uerr := r.Status().Update(ctx, &ap); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -60,6 +77,10 @@ func (r *AgentPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	ap.Status.Phase = phase
 	ap.Status.OpenTickets = open
+	ap.Status.Conditions = setCondition(ap.Status.Conditions, metav1.Condition{
+		Type: "Synced", Status: metav1.ConditionTrue, Reason: "Reconciled",
+		Message: "drift state read from apiserver", ObservedGeneration: ap.Generation,
+	})
 	if len(open) == 0 {
 		ap.Status.LastCleanRun = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -76,18 +97,44 @@ func (r *AgentPolicyReconciler) fetchTickets(ctx context.Context) ([]model.Ticke
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	if r.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+r.Token)
+	}
+	hc := r.HTTP
+	if hc == nil {
+		hc = &http.Client{Timeout: 10 * time.Second}
+	}
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("apiserver returned HTTP %d", resp.StatusCode)
+	}
 	var env struct {
 		Data []model.Ticket `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxTicketsBody)).Decode(&env); err != nil {
 		return nil, err
 	}
 	return env.Data, nil
+}
+
+// setCondition upserts a condition by type, bumping LastTransitionTime only
+// when the status actually changes.
+func setCondition(conds []metav1.Condition, c metav1.Condition) []metav1.Condition {
+	c.LastTransitionTime = metav1.Now()
+	for i := range conds {
+		if conds[i].Type == c.Type {
+			if conds[i].Status == c.Status {
+				c.LastTransitionTime = conds[i].LastTransitionTime
+			}
+			conds[i] = c
+			return conds
+		}
+	}
+	return append(conds, c)
 }
 
 // SetupWithManager wires the reconciler to watch AgentPolicy.

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: acra
+description: ACRA - agent reliability and drift control plane (apiserver, gate, operator, optional OTLP ingest collector)
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/deepnavakoti/acra
+sources:
+  - https://github.com/deepnavakoti/acra
+keywords: [agents, reliability, drift, observability, opentelemetry, kagent]

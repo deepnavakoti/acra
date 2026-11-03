@@ -1,0 +1,39 @@
+{{- if .Values.controller.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "acra.fullname" . }}-controller
+  labels: {{ include "acra.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{ include "acra.selector" (dict "Release" .Release "component" "controller") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "acra.selector" (dict "Release" .Release "component" "controller") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "acra.fullname" . }}-controller
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{ toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: controller
+          image: {{ include "acra.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/controller"]
+          env:
+            - name: APISERVER_URL
+              value: "http://{{ include "acra.fullname" . }}-apiserver.{{ .Release.Namespace }}.svc"
+            - name: ACRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "acra.secretName" . }}
+                  key: api-token
+                  {{- if .Values.auth.existingSecret }}
+                  optional: true
+                  {{- end }}
+          securityContext: {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources: {{ toYaml .Values.controller.resources | nindent 12 }}
+{{- end }}

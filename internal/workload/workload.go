@@ -46,6 +46,8 @@ func Generate(kind string, store *evidence.Store, seq int) (model.Ticket, error)
 		Bundle:   "sha256:9f1c…",
 		ModelPin: "bedrock · pinned v1",
 		Evidence: traceID,
+		Attempt:  1,
+		Step:     1,
 	}
 
 	switch kind {
@@ -185,6 +187,7 @@ func Generate(kind string, store *evidence.Store, seq int) (model.Ticket, error)
 		return model.Ticket{}, fmt.Errorf("workload: gate ADMITted a %q injection (expected HOLD) — logic bug", kind)
 	}
 	t.Detector = res.Detector
+	t.Epoch = w.Epoch
 	t.Magnitude = res.Magnitude
 	t.Confidence = res.Confidence
 	t.Radius = res.Radius

@@ -1,0 +1,88 @@
+{{- if and .Values.adapters.kubernetes.enabled .Values.adapters.kubernetes.namespaces }}
+{{- /* Read-only evidence for RCA: pods, pod logs and events. No write verbs, no secrets. */}}
+{{- $rules := `
+- apiGroups: [""]
+  resources: ["pods", "events"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+` }}
+{{- if .Values.adapters.kubernetes.clusterWide }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "acra.fullname" . }}-reader
+  labels: {{ include "acra.labels" . | nindent 4 }}
+rules: {{ $rules | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "acra.fullname" . }}-reader
+  labels: {{ include "acra.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "acra.fullname" . }}-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "acra.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+{{- range .Values.adapters.kubernetes.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "acra.fullname" $ }}-reader
+  namespace: {{ . }}
+  labels: {{ include "acra.labels" $ | nindent 4 }}
+rules: {{ $rules | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "acra.fullname" $ }}-reader
+  namespace: {{ . }}
+  labels: {{ include "acra.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "acra.fullname" $ }}-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "acra.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.controller.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "acra.fullname" . }}-controller
+  labels: {{ include "acra.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["acra.dev"]
+    resources: ["agentpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["acra.dev"]
+    resources: ["agentpolicies/status"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "acra.fullname" . }}-controller
+  labels: {{ include "acra.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "acra.fullname" . }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "acra.fullname" . }}-controller
+    namespace: {{ .Release.Namespace }}
+{{- end }}

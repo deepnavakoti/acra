@@ -6,11 +6,17 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/deepnavakoti/acra/internal/a2a"
 	"github.com/deepnavakoti/acra/internal/evidence"
+	"github.com/deepnavakoti/acra/internal/gateway"
+	"github.com/deepnavakoti/acra/internal/identity"
+	"github.com/deepnavakoti/acra/internal/mcp"
 	"github.com/deepnavakoti/acra/internal/model"
+	"github.com/deepnavakoti/acra/internal/pipeline"
 	"github.com/deepnavakoti/acra/internal/telemetry"
 	"github.com/deepnavakoti/acra/internal/workload"
 )
@@ -23,21 +29,39 @@ type Server struct {
 	tickets     []model.Ticket
 	seq         int
 	consolePath string
+
+	// Optional. Auth nil or without tokens means open access (local demo).
+	Auth *identity.Authenticator
+	// Pipeline enables the ingest/contract/incident endpoints.
+	Pipeline *pipeline.Service
+	// Gateway enables the read-only tool endpoints.
+	Gateway *gateway.Gateway
+	// MCP serves the gateway tools over the Model Context Protocol (POST /mcp).
+	MCP *mcp.Server
+	// A2A serves incidents and investigation to peer agents (POST /a2a plus the
+	// Agent Card under /.well-known/).
+	A2A *a2a.Server
+	// DemoEnabled exposes POST /v1/demo/inject. New enables it so the local demo
+	// works; production deployments should turn it off.
+	DemoEnabled bool
 }
 
 func New(store *evidence.Store, consolePath string) *Server {
-	return &Server{store: store, consolePath: consolePath, tickets: []model.Ticket{}}
+	return &Server{store: store, consolePath: consolePath, tickets: []model.Ticket{}, DemoEnabled: true}
 }
 
 // Routes registers all handlers.
 func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
-	mux.HandleFunc("GET /v1/snapshot", s.snapshot)
-	mux.HandleFunc("GET /v1/tickets", s.listTickets)
-	mux.HandleFunc("GET /v1/tickets/{id}", s.getTicket)
-	mux.HandleFunc("GET /v1/evidence/{id}", s.getEvidence)
-	mux.HandleFunc("POST /v1/demo/inject", s.inject)
+	mux.HandleFunc("GET /v1/snapshot", s.Auth.Require(identity.RoleReader, s.snapshot))
+	mux.HandleFunc("GET /v1/tickets", s.Auth.Require(identity.RoleReader, s.listTickets))
+	mux.HandleFunc("GET /v1/tickets/{id}", s.Auth.Require(identity.RoleReader, s.getTicket))
+	mux.HandleFunc("GET /v1/evidence/{id}", s.Auth.Require(identity.RoleReader, s.getEvidence))
+	if s.DemoEnabled {
+		mux.HandleFunc("POST /v1/demo/inject", s.Auth.Require(identity.RoleAdmin, s.inject))
+	}
+	s.reliabilityRoutes(mux)
 	mux.HandleFunc("GET /", s.console)
 	return mux
 }
@@ -134,8 +158,12 @@ func traceShape(tr model.Trace, task string) map[string]any {
 		}
 		entries = append(entries, []string{ev.TS.Format("15:04:05"), ev.Kind, ev.Detail})
 	}
+	bundle := ""
+	if h := strings.TrimPrefix(tr.Bundle, "sha256:"); len(h) >= 12 {
+		bundle = "sha256:" + h[:12] + "…"
+	}
 	return map[string]any{
-		"task": task, "caller": caller, "bundle": "sha256:9f1c…",
+		"task": task, "caller": caller, "bundle": bundle,
 		"chain": tr.Chain, "entries": entries,
 	}
 }
