@@ -127,6 +127,11 @@ type Ticket struct {
 	Action     Action       `json:"action"`
 	History    [][3]string  `json:"history"` // [ts, stage, detail]
 	Evidence   string       `json:"evidence"`
+	// Operational correlation ids (omitted when unknown; never fabricated).
+	Epoch   int    `json:"epoch,omitempty"`
+	Attempt int    `json:"attempt,omitempty"`
+	Step    int    `json:"step,omitempty"`
+	SpanID  string `json:"spanId,omitempty"`
 }
 
 // Baseline is a signed snapshot of "what we agreed", per layer. It changes only

@@ -25,6 +25,17 @@ type Store struct {
 	pub  ed25519.PublicKey
 }
 
+// metaBucket holds one anchor per trace: the last sequence number and head
+// hash. verify() alone cannot see deleted tail events (every remaining link and
+// signature is still valid), so Trace() cross-checks the chain against this
+// anchor and reports "broken" on any mismatch or missing anchor (fail closed).
+var metaBucket = []byte("\x00acra-anchor")
+
+type anchor struct {
+	Seq  int    `json:"seq"`
+	Head string `json:"head"`
+}
+
 // signedPayload is the exact set of fields a signature covers. Field order is
 // fixed (struct order) so the JSON encoding is deterministic.
 type signedPayload struct {
@@ -55,6 +66,9 @@ func (s *Store) Append(ev model.Event) (model.Event, error) {
 	if ev.TraceID == "" {
 		return ev, fmt.Errorf("evidence: event has no traceId")
 	}
+	if ev.TraceID == string(metaBucket) {
+		return ev, fmt.Errorf("evidence: reserved traceId")
+	}
 	if ev.TS.IsZero() {
 		ev.TS = time.Now().UTC()
 	}
@@ -82,18 +96,49 @@ func (s *Store) Append(ev model.Event) (model.Event, error) {
 		if err != nil {
 			return err
 		}
-		return b.Put(seqKey(ev.Seq), buf)
+		if err := b.Put(seqKey(ev.Seq), buf); err != nil {
+			return err
+		}
+		mb, err := tx.CreateBucketIfNotExists(metaBucket)
+		if err != nil {
+			return err
+		}
+		raw, err := json.Marshal(anchor{Seq: ev.Seq, Head: eventHash(ev)})
+		if err != nil {
+			return err
+		}
+		return mb.Put([]byte(ev.TraceID), raw)
 	})
 	return ev, err
 }
 
 // Trace returns one trace: its events in order plus whether the chain verifies.
 func (s *Store) Trace(traceID string) (model.Trace, error) {
+	tr, _, err := s.load(traceID)
+	return tr, err
+}
+
+// load reads a trace and its anchor verdict. The returned error is the reason
+// the chain is not intact (nil when intact); the second return value of the
+// outer signature is the lookup error.
+func (s *Store) load(traceID string) (model.Trace, error, error) {
 	tr := model.Trace{TraceID: traceID, Chain: "broken"}
+	if traceID == "" || traceID == string(metaBucket) {
+		return tr, nil, fmt.Errorf("evidence: invalid traceId")
+	}
+	var anc *anchor
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(traceID))
 		if b == nil {
 			return fmt.Errorf("evidence: no trace %q", traceID)
+		}
+		if mb := tx.Bucket(metaBucket); mb != nil {
+			if raw := mb.Get([]byte(traceID)); raw != nil {
+				var a anchor
+				if json.Unmarshal(raw, &a) == nil {
+					anc = &a
+				}
+			}
 		}
 		return b.ForEach(func(_, v []byte) error {
 			var ev model.Event
@@ -105,21 +150,45 @@ func (s *Store) Trace(traceID string) (model.Trace, error) {
 		})
 	})
 	if err != nil {
-		return tr, err
+		return tr, nil, err
 	}
-	if ok, _ := s.verify(tr.Events); ok {
+	if anc != nil {
+		tr.Bundle = "sha256:" + anc.Head
+	}
+	broken := s.verifyAnchored(tr.Events, anc)
+	if broken == nil {
 		tr.Chain = "intact"
 	}
-	return tr, nil
+	return tr, broken, nil
 }
 
-// Verify re-checks every signature and every chain link for a trace.
+// Verify re-checks every signature, every chain link, and the anchored head and
+// length for a trace (so deleted tail events are detected too).
 func (s *Store) Verify(traceID string) (bool, error) {
-	tr, err := s.Trace(traceID)
+	tr, broken, err := s.load(traceID)
 	if err != nil {
 		return false, err
 	}
-	return s.verify(tr.Events)
+	return tr.Chain == "intact", broken
+}
+
+func (s *Store) verifyAnchored(events []model.Event, anc *anchor) error {
+	if ok, err := s.verify(events); !ok {
+		return err
+	}
+	if len(events) == 0 {
+		return fmt.Errorf("evidence: empty trace")
+	}
+	if anc == nil {
+		return fmt.Errorf("evidence: missing anchor (possible truncation)")
+	}
+	if anc.Seq != len(events) {
+		return fmt.Errorf("evidence: anchor expects %d events, found %d (truncated)", anc.Seq, len(events))
+	}
+	if anc.Head != eventHash(events[len(events)-1]) {
+		return fmt.Errorf("evidence: head hash does not match anchor")
+	}
+	return nil
 }
 
 func (s *Store) verify(events []model.Event) (bool, error) {
